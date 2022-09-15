@@ -1,0 +1,1 @@
+linux上clash工具脚本，需wget和curl支持·

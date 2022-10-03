@@ -1,6 +1,6 @@
 linux上clash工具脚本，需wget和curl支持
 
-clashtool [功能] 参数
+clashtool \[功能\] 参数
 fun: 功能 必填
 var: 参数 根据fun选填
 

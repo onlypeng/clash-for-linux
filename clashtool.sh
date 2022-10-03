@@ -4,24 +4,24 @@ set -e
 
 # clash平台
 platform='clash-linux-amd64'
-# 当前脚本目录
-tool_catalog=$(cd $(dirname $0);pwd)
 # clash 程序目录
 clash_catalog="/usr/local/clash"
 # clash 配置目录
 config_catalog="${HOME}/.config/clash"
+
 # clash UI目录
 clash_gh_pages_catalog="${clash_catalog}/clash_gh_pages"
 # subscribe配置文件
 subscribe_config_catalog="${config_catalog}/subscribe"
-
 # clash文件
 clash_path="${clash_catalog}/clash"
-# clash配置文件,用户修改此处
+# clash配置文件
 config_path="${config_catalog}/config.yaml"
 # clashtool 配置文件
 clashtool_config_path="${config_catalog}/clashtool.ini"
 
+# 当前脚本目录
+tool_catalog=$(cd $(dirname $0);pwd)
 # 保存程序运行状态
 state=$(ps -ef | grep "${clash_path}" | grep -v grep | awk '{print $1}')
 

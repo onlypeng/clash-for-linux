@@ -1,3 +1,9 @@
+# 自定义参数 <br>
+platform 根据自己平台选择下载的clash版本，必须根据自己平台填写 <br>
+clash_catalog 程序存放目录，可默认 <br>
+config_catalog 配置存放目录，可默认 <br>
+用户更改clash配置文件config.yaml <br>
+ <br>
 linux上clash工具脚本，需wget和curl支持 <br>
  <br>
 clashtool \[功能\] 参数 <br>

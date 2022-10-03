@@ -2,6 +2,8 @@
 
 set -e
 
+# clash平台
+platform='clash-linux-amd64'
 # 当前脚本目录
 tool_catalog=$(cd $(dirname $0);pwd)
 # clash 程序目录
@@ -227,7 +229,7 @@ function install(){
         fi
         # 下载clash
         echo "version: ${version}"
-        wget -O ${clash_catalog}/calsh-linux-amd64-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/clash-linux-amd64-${version}.gz
+        wget -O ${clash_catalog}/calsh-linux-amd64-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
         if [[ -f ${clash_catalog}/calsh-linux-amd64-${version}.gz ]]; then
             # 解压clash
             gunzip -f ${clash_catalog}/calsh-linux-amd64-${version}.gz
@@ -281,7 +283,7 @@ function update(){
         else
             echo "Updating..."
             # 下载文件
-            wget -O ${clash_catalog}/calsh-linux-amd64-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/clash-linux-amd64-${version}.gz
+            wget -O ${clash_catalog}/calsh-linux-amd64-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
             if [[ -f "${clash_catalog}/calsh-linux-amd64-${version}.gz" ]]; then
                 # 解压clash
                 gunzip -f ${clash_catalog}/calsh-linux-amd64-${version}.gz

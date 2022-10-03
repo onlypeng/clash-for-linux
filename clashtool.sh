@@ -22,9 +22,6 @@ config_path="${config_catalog}/config.yaml"
 # clashtool 配置文件
 clashtool_config_path="${config_catalog}/clashtool.ini"
 
-# clash 系统版本
-clash_structure=""
-
 # 保存程序运行状态
 state=$(ps -ef | grep "${clash_path}" | grep -v grep | awk '{print $1}')
 

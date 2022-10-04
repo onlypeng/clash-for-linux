@@ -226,12 +226,12 @@ function install(){
         fi
         # 下载clash
         echo "version: ${version}"
-        wget -O ${clash_catalog}/calsh-linux-amd64-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
-        if [[ -f ${clash_catalog}/calsh-linux-amd64-${version}.gz ]]; then
+        wget -O ${clash_catalog}/${platform}-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
+        if [[ -f ${clash_catalog}/${platform}-${version}.gz ]]; then
             # 解压clash
-            gunzip -f ${clash_catalog}/calsh-linux-amd64-${version}.gz
+            gunzip -f ${clash_catalog}/${platform}-${version}.gz
             # 重命名clash
-            mv ${clash_catalog}/calsh-linux-amd64-${version} ${clash_path}
+            mv ${clash_catalog}/${platform}-${version} ${clash_path}
             # 赋予运行权限
             chmod 755 ${clash_path}
             # 向clash配置文件写入当前版本
@@ -280,16 +280,16 @@ function update(){
         else
             echo "Updating..."
             # 下载文件
-            wget -O ${clash_catalog}/calsh-linux-amd64-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
-            if [[ -f "${clash_catalog}/calsh-linux-amd64-${version}.gz" ]]; then
+            wget -O ${clash_catalog}/${platform}-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
+            if [[ -f "${clash_catalog}/${platform}-${version}.gz" ]]; then
                 # 解压clash
-                gunzip -f ${clash_catalog}/calsh-linux-amd64-${version}.gz
+                gunzip -f ${clash_catalog}/${platform}-${version}.gz
                 # 停止clash程序
                 stop
                 # 备份当前版本clash
                 mv ${clash_path} ${clash_catalog}/backup/clash$(date '+%Y%m%d%H%M%S')
                 # 重命名clash
-                mv ${clash_catalog}/calsh-linux-amd64-${version} ${clash_path}
+                mv ${clash_catalog}/${platform}-${version} ${clash_path}
                 # 赋予运行权限
                 chmod 755 ${clash_path}
                 # 更新clashtool配置文件中版本号

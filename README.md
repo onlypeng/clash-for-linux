@@ -45,7 +45,6 @@ add：添加配置文件 <br>
 &emsp;&emsp;《配置信息，格式：配置名称::订阅地址::自动订阅时间(小时)::是否自动订阅(true/false)》 <br>
 del：删除订阅配置 <br>
 &emsp;&emsp;《配置文件名称》 <br>
-&emsp;&emsp;默认当前使用配置 <br>
 subscribe：更新配置文件 <br>
 &emsp;&emsp;《配置文件名称》 <br>
 &emsp;&emsp;默认更新全部配置 <br>

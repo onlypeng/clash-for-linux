@@ -589,7 +589,7 @@ function del(){
 }
 
 # 更新订阅
-function subscribe(){
+function update_sub(){
     local name=$1
     # 是否指定订阅配置
     if [[ -z "${name}" ]]; then
@@ -739,8 +739,8 @@ function main(){
         "del")
             del ${var}
             ;;
-        "sub")
-            subscribe ${var}
+        "update_sub")
+            update_sub ${var}
             ;;
         "list")
             list

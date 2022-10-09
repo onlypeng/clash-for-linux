@@ -48,7 +48,7 @@ add：添加配置文件 <br>
 &emsp;&emsp;《配置信息，格式：配置名称::订阅地址::自动订阅时间(小时)::是否自动订阅(true/false)》 <br>
 del：删除订阅配置 <br>
 &emsp;&emsp;《配置文件名称》 <br>
-subscribe：更新配置文件 <br>
+update_sub：更新配置文件 <br>
 &emsp;&emsp;《配置文件名称》 <br>
 &emsp;&emsp;默认更新全部配置 <br>
 list：显示全部订阅配置 <br>
@@ -56,7 +56,7 @@ list：显示全部订阅配置 <br>
 auto_start：设置开机自启（暂无法使用 <br>
 &emsp;&emsp;true：开启开机自启 <br>
 &emsp;&emsp;false：关闭开机自启 <br>
-auto_subscribe：设置定时自动更新 <br>
+auto_sub：设置定时自动更新 <br>
 &emsp;&emsp;没有参数 <br>
 help: 帮助文档 <br>
 &emsp;&emsp;没有参数 <br>

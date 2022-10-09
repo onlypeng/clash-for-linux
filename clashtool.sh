@@ -645,12 +645,12 @@ function auto_sub(){
     for name in ${names}
     do  
         local patt="clashtool.sh update_subscribe ${name}"
-        local update=$(get_subscribe_config "${name}" "update")
         # 查看任务中是否有此任务
-        if [[ -z $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
+        if [[ -n $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
             # 有则删除
-            sed -i "/^.*${patt}.*$/d" ${config_catalog}/temp_crontab
+            sed -i "/${patt}/d" ${config_catalog}/temp_crontab
         fi
+        local update=$(get_subscribe_config "${name}" "update")
         # 查看是否启用自动更新订阅
         if [[ "${update}" == 'true' ]]; then
             # 添加定时任务

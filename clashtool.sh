@@ -646,21 +646,16 @@ function auto_sub(){
     do  
         local patt="clashtool.sh update_subscribe ${name}"
         local update=$(get_subscribe_config "${name}" "update")
-        if [[ "${update}" == 'true' ]]; then
-            local interval=$(get_subscribe_config "${name}" 'interval')
-            local cron="0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1"
-            # 查看任务中是否有此任务
-	        if [[ -z $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
-                # 没有添加
-                echo "${cron}" >> ${config_catalog}/temp_crontab
-            else
-                # 有则修改
-                cron=$(echo ${cron} | sed 's/\//\\\//g')
-                sed -i "/^.*${patt}.*$/${cron}/" ${config_catalog}/temp_crontab
-            fi
-        else
-            # 删除关闭的定时任务
+        # 查看任务中是否有此任务
+        if [[ -z $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
+            # 有则删除
             sed -i "/^.*${patt}.*$/d" ${config_catalog}/temp_crontab
+        fi
+        # 查看是否启用自动更新订阅
+        if [[ "${update}" == 'true' ]]; then
+            # 添加定时任务
+            local interval=$(get_subscribe_config "${name}" 'interval')
+            echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
         fi
     done
     IFS=$IFS_old

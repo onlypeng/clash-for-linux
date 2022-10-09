@@ -200,10 +200,10 @@ function myhepl(){
 	echo "reload                (Subscription Name) default'' Current configuration"
     echo "add                   (*subscribe) name::url::date::0/1"
 	echo "del                   (*Subscription Name)"
-	echo "subscribe             (Subscription Name) default'' Download all subscriptions"
+	echo "sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
 	echo "auto_start            (*true/false)"
-	echo "auto_subscribe        (not var)"
+	echo "auto_auto_sub         (not var)"
 
 }
 
@@ -595,7 +595,7 @@ function subscribe(){
     if [[ -z "${name}" ]]; then
         # 更新当前使用订阅配置
         name=$(get_subscribe_config '' 'use')
-        download_subscribe "name"
+        download_subscribe "${name}"
         # 根据运行状态自动重载配置
         autoreload
     elif [[ "${name}" == "all" ]]; then
@@ -648,14 +648,14 @@ function auto_subscribe(){
         local update=$(get_subscribe_config "${name}" "update")
         if [[ "${update}" == 'true' ]]; then
             local interval=$(get_subscribe_config "${name}" 'interval')
-            local cron=$(echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1" | sed 's/\//\\\//g')
+            local cron=$(echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1")
             # 查看任务中是否有此任务
 	        if [[ -z $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
                 # 没有添加
                 echo "${cron}" >> ${config_catalog}/temp_crontab
             else
                 # 有则修改
-                sed -i "/^.*${patt}.*$/${cron}/" ${config_catalog}/temp_crontab
+                sed -i "/^.*${patt}.*$/$(${cron} | sed 's/\//\\\//g')/" ${config_catalog}/temp_crontab
             fi
         else
             # 删除关闭的定时任务
@@ -739,7 +739,7 @@ function main(){
         "del")
             del ${var}
             ;;
-        "subscribe")
+        "sub")
             subscribe ${var}
             ;;
         "list")
@@ -748,7 +748,7 @@ function main(){
         "auto_start")
             auto_start ${var}
             ;;
-        "auto_subscribe")
+        "auto_sub")
             auto_subscribe ${var}
             ;;
         *)

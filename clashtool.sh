@@ -655,7 +655,8 @@ function auto_sub(){
                 echo "${cron}" >> ${config_catalog}/temp_crontab
             else
                 # 有则修改
-                sed -i "/^.*${patt}.*$/$(echo ${cron} | sed 's/\//\\\//g')/" ${config_catalog}/temp_crontab
+                cron=$(echo ${cron} | sed 's/\//\\\//g')
+                sed -i "/^.*${patt}.*$/${cron}/" ${config_catalog}/temp_crontab
             fi
         else
             # 删除关闭的定时任务

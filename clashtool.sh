@@ -595,7 +595,7 @@ function update_sub(){
     if [[ -z "${name}" ]]; then
         # 更新当前使用订阅配置
         name=$(get_subscribe_config '' 'use')
-        download_subscribe "${name}"
+        download_sub "${name}"
         # 根据运行状态自动重载配置
         autoreload
     elif [[ "${name}" == "all" ]]; then
@@ -606,14 +606,14 @@ function update_sub(){
     names=${names/%,}
     for name in ${names}
         do
-            download_subscribe "${name}"
+            download_sub "${name}"
         done
         IFS=$IFS_old
     else
         # 更新指定订阅配置
         exis=$(existence_subscrib_config "${name}")
         if [[ ${exis} == '0' ]]; then
-            download_subscribe "${name}"
+            download_sub "${name}"
             echo "update subscribe ok" 
         else
             echo "No such subscription"
@@ -622,7 +622,7 @@ function update_sub(){
 }
 
 # 下载订阅配置
-function download_subscribe(){
+function download_sub(){
     local name=$1
     local url=$(get_subscribe_config "${name}" "url")
     echo "start dowload: ${name}.conf"
@@ -635,7 +635,7 @@ function download_subscribe(){
 }
 
 # 根据配置生成定时任务文件
-function auto_subscribe(){
+function auto_sub(){
     IFS_old=$IFS
     IFS=$','
     # 复制原定时任务
@@ -648,14 +648,14 @@ function auto_subscribe(){
         local update=$(get_subscribe_config "${name}" "update")
         if [[ "${update}" == 'true' ]]; then
             local interval=$(get_subscribe_config "${name}" 'interval')
-            local cron=$(echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1")
+            local cron="0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1"
             # 查看任务中是否有此任务
 	        if [[ -z $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
                 # 没有添加
                 echo "${cron}" >> ${config_catalog}/temp_crontab
             else
                 # 有则修改
-                sed -i "/^.*${patt}.*$/$(${cron} | sed 's/\//\\\//g')/" ${config_catalog}/temp_crontab
+                sed -i "/^.*${patt}.*$/$(echo ${cron} | sed 's/\//\\\//g')/" ${config_catalog}/temp_crontab
             fi
         else
             # 删除关闭的定时任务
@@ -749,7 +749,7 @@ function main(){
             auto_start ${var}
             ;;
         "auto_sub")
-            auto_subscribe ${var}
+            auto_sub ${var}
             ;;
         *)
             myhepl

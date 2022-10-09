@@ -3,6 +3,9 @@ platform 根据自己平台选择下载的clash版本，必须根据自己平台
 clash_catalog 程序存放目录，可默认 <br>
 config_catalog 配置存放目录，可默认 <br>
 用户更改clash配置文件config.yaml <br>
+Clas默认登录地址http://ip:9090/ui
+Clas默认登录密码：12123 <br>
+下载：wget -O https://raw.githubusercontent.com/onlypeng/clashtools/main/clashtool.sh <br>
  <br>
 linux上clash工具脚本，需wget和curl支持 <br>
  <br>

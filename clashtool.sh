@@ -561,7 +561,7 @@ function add(){
         set_subscribe_config "${name}" 'update' "${update}"
     fi
     # 下载配置
-    subscribe "${name}" 
+    download_sub "${name}" 
 }
 
 # 删除订阅
@@ -577,7 +577,7 @@ function del(){
         sed -i "s/${name},//g" ${clashtool_config_path}
         # 删除定时更新
         crontab -l > ${config_catalog}/temp_crontab
-        sed -i "/clashtool.sh update_subscribe ${name} >>/d" ${config_catalog}/temp_crontab
+        sed -i "/clashtool.sh update_sub ${name} >>/d" ${config_catalog}/temp_crontab
         crontab ${config_catalog}/temp_crontab
         rm -f ${config_catalog}/temp_crontab
         # 删除下载配置文件
@@ -644,7 +644,7 @@ function auto_sub(){
     names=${names/%,}
     for name in ${names}
     do  
-        local patt="clashtool.sh update_subscribe ${name}"
+        local patt="clashtool.sh update_sub ${name}"
         # 查看任务中是否有此任务
         if [[ -n $(grep "${patt}" ${config_catalog}/temp_crontab) ]]; then
             # 有则删除
@@ -655,7 +655,7 @@ function auto_sub(){
         if [[ "${update}" == 'true' ]]; then
             # 添加定时任务
             local interval=$(get_subscribe_config "${name}" 'interval')
-            echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh update_subscribe ${name} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
+            echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh download_sub ${name} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
         fi
     done
     IFS=$IFS_old

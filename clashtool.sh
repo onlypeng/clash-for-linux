@@ -591,14 +591,8 @@ function del(){
 # 更新订阅
 function update_sub(){
     local name=$1
-    # 是否指定订阅配置
-    if [[ -z "${name}" ]]; then
-        # 更新当前使用订阅配置
-        name=$(get_subscribe_config '' 'use')
-        download_sub "${name}"
-        # 根据运行状态自动重载配置
-        autoreload
-    elif [[ "${name}" == "all" ]]; then
+    # 是否更新所有订阅
+    if [[ "${name}" == "all" ]]; then
         # 更新所有订阅配置
         IFS_old=$IFS
         IFS=$','
@@ -610,13 +604,23 @@ function update_sub(){
         done
         IFS=$IFS_old
     else
-        # 更新指定订阅配置
-        exis=$(existence_subscrib_config "${name}")
-        if [[ ${exis} == '0' ]]; then
-            download_sub "${name}"
-            echo "update subscribe ok" 
+        local use=$(get_subscribe_config '' 'use') 
+        # 更新当前使用配置
+        if [[ -z "${name}" ]];then
+            download_sub "${use}"
+            autoreload
         else
-            echo "No such subscription"
+            # 更新指定订阅配置
+            exis=$(existence_subscrib_config "${name}")
+            if [[ ${exis} == '0' ]]; then
+                download_sub "${name}"
+                if [[ ${use} == ${name} ]]; then
+                    autoreload
+                fi
+                echo "update subscribe ok" 
+            else
+                echo "No such subscription"
+            fi
         fi
     fi
 }
@@ -655,7 +659,7 @@ function auto_sub(){
         if [[ "${update}" == 'true' ]]; then
             # 添加定时任务
             local interval=$(get_subscribe_config "${name}" 'interval')
-            echo "0 */${interval} * * * sh ${tool_catalog}/clashtool.sh download_sub ${name} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
+            echo "0 */${interval} * * * sh ${tool_catalog}/${patt} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
         fi
     done
     IFS=$IFS_old

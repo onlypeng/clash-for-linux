@@ -200,7 +200,7 @@ function myhepl(){
 	echo "reload                (Subscription Name) default'' Current configuration"
     echo "add                   (*subscribe) name::url::date::0/1"
 	echo "del                   (*Subscription Name)"
-	echo "sub                   (Subscription Name) default'' Download all subscriptions"
+	echo "update_sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
 	echo "auto_start            (*true/false)"
 	echo "auto_auto_sub         (not var)"

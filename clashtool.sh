@@ -413,7 +413,7 @@ function start (){
         echo "start start"
         if [[ -f "${clash_path}" ]];then
             # 启动clash
-            nohup ${clash_path} -d config_catalog > ${config_catalog}/clash.log 2>&1 &
+            nohup ${clash_path} -d ${config_catalog} > ${config_catalog}/clash.log 2>&1 &
             state="$!"
             # 写入clash PID
             set_clashtool_config 'pid' "${state}"

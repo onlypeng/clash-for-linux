@@ -17,7 +17,7 @@ clash_path="${clash_catalog}/clash"
 # clash配置文件
 config_path="${config_catalog}/config.yaml"
 # 订阅配置目录
-subscribe_config_catalog="${clash_catalog}/subscribe"
+subscribe_config_catalog="${config_catalog}/subscribe"
 # clashtool 配置文件
 clashtool_config_path="${config_catalog}/clashtool.ini"
 

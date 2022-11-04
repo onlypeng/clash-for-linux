@@ -4,14 +4,14 @@ set -e
 
 # clash平台
 platform='clash-linux-amd64'
-# clash 程序目录
+# clash 目录
 clash_catalog="/usr/local/clash"
-# clash 配置目录
-config_catalog="${HOME}/.config/clash"
 
+# clash 配置目录
+config_catalog="${clash_catalog}/config"
 # clash UI目录
 clash_gh_pages_catalog="${clash_catalog}/clash_gh_pages"
-# subscribe配置文件
+# 订阅配置目录
 subscribe_config_catalog="${config_catalog}/subscribe"
 # clash文件
 clash_path="${clash_catalog}/clash"
@@ -138,10 +138,6 @@ function autoecreate () {
     if [[ ! -d "${clash_catalog}" ]]; then
 		mkdir -p ${clash_catalog}
 	fi
-    # 创建clash备份目录
-    if [[ ! -d "${clash_catalog}/backup" ]]; then
-		mkdir ${clash_catalog}/backup
-	fi
 	# 创建配置目录
     if [[ ! -d "${config_catalog}" ]]; then
 		mkdir -p ${config_catalog}
@@ -149,10 +145,6 @@ function autoecreate () {
 	# 创建subscribe配置目录
     if [[ ! -d "${subscribe_config_catalog}" ]]; then
 		mkdir  ${subscribe_config_catalog}
-	fi
-   # 创建subscribe配置备份目录
-    if [[ ! -d "${subscribe_config_catalog}/backup" ]]; then
-		mkdir ${subscribe_config_catalog}/backup
 	fi
 	# 创建clashtool和订阅配置文件
 	if [[ ! -f "${clashtool_config_path}" ]]; then
@@ -286,8 +278,6 @@ function update(){
                 gunzip -f ${clash_catalog}/${platform}-${version}.gz
                 # 停止clash程序
                 stop
-                # 备份当前版本clash
-                mv ${clash_path} ${clash_catalog}/backup/clash$(date '+%Y%m%d%H%M%S')
                 # 重命名clash
                 mv ${clash_catalog}/${platform}-${version} ${clash_path}
                 # 赋予运行权限
@@ -409,9 +399,6 @@ function update_ui(){
 function uninstall_all(){
     echo "Start Uninstall"
     stop
-    if [[ -d "${config_catalog}" ]]; then
-        rm -rf $config_catalog
-    fi
     if [[ -d "${clash_catalog}" ]]; then
         rm -rf ${clash_catalog}
     fi
@@ -420,6 +407,7 @@ function uninstall_all(){
 
 # 启动clash
 function start (){
+    # 判断是否正在运行
     if [[ -z "${state}" ]]; then
         echo "start start"
         if [[ -f "${clash_path}" ]];then
@@ -602,7 +590,8 @@ function update_sub(){
         do
             download_sub "${name}"
         done
-        IFS=$IFS_old
+    IFS=$IFS_old
+    autoreload
     else
         local use=$(get_subscribe_config '' 'use') 
         # 更新当前使用配置
@@ -631,9 +620,6 @@ function download_sub(){
     local url=$(get_subscribe_config "${name}" "url")
     echo "start dowload: ${name}.conf"
     wget -O ${subscribe_config_catalog}/${name}.new.yaml ${url}
-    if [[ -f "${subscribe_config_catalog}/${name}.yaml" ]]; then
-        mv ${subscribe_config_catalog}/${name}.yaml ${subscribe_config_catalog}/backup/${name}.yaml$(date '+%Y%m%d%H%M%S')
-    fi
     mv ${subscribe_config_catalog}/${name}.new.yaml ${subscribe_config_catalog}/${name}.yaml
     echo "download ok"
 }

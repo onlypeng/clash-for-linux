@@ -355,8 +355,8 @@ function uninstall_ui(){
     fi
     # 删除用户配置UI相关配置
 	sed -i '/^external-ui: /d' ${config_path}
-    # 根据前状态判断是否自动重载配置
-    autoreload
+    # 根据前状态判断是否自动重重启
+    autostart
 	echo "uninstall UI succeeded"
 }
 
@@ -504,7 +504,6 @@ function reload (){
 
 # 显示当所有订阅
 function list(){
-    echo "0/1::name::url::date::0/1"
     IFS_old=$IFS
     IFS=$','
     local names=$(get_subscribe_config '' 'names')

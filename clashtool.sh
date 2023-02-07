@@ -24,7 +24,7 @@ clashtool_config_path="${config_catalog}/clashtool.ini"
 # 当前脚本目录
 tool_catalog=$(cd "$(dirname "$0")";pwd)
 # 保存程序运行状态
-state=$(pgrep -f "$clash_path")
+state=$(ps -ef | grep "$clash_path" | grep -v grep | awk '{print $1}')
 
 # 公共配置操作函数 开始
 
@@ -147,6 +147,11 @@ function autoecreate () {
     then
 		mkdir -p ${config_catalog}
 	fi
+	# 创建UI目录
+    if [[ ! -d "${clash_gh_pages_catalog}" ]]
+    then
+		mkdir -p ${clash_gh_pages_catalog}
+	fi
 	# 创建subscribe配置目录
     if [[ ! -d "${subscribe_config_catalog}" ]]
     then
@@ -164,27 +169,27 @@ function autoecreate () {
 	fi
 }
 
-# 如果记录状态为运行则启动
+# 状态为运行则启动
 function autostart(){
     if [[ -n "$state" ]]
     then
-        start $1
+        start
     fi
 }
 
-# 如果记录状态为运行则重新启动
-function autorestart(){
+# 状态为运行则停止
+function autostop(){
     if [[ -n "$state" ]]
-     then
-        restart $1
-     fi
+    then
+        stop
+    fi
 }
 
-# 如果记录状态为运行则重载配置
+# 状态为运行则重载配置
 function autoreload(){
     if [[ -n "$state" ]]
     then
-        reload $1
+        reload "$1"
     fi
 }
 
@@ -192,21 +197,19 @@ function autoreload(){
 function myhepl(){
 	echo "fun                                     var"
 	echo "install               (version) default'' Install the latest version"
-	echo "install_ui            (dashboard or yacd) default'' Install dashboard UI"          
-	echo "uninstall             (not var)"     
-	echo "uninstall_ui          (not var)"
+	echo "uninstall             (is all) default'' Delete or not configuration"     
 	echo "update                (not var)"
-	echo "update_ui             (dashboard or yacd) default '' Install the currently installed UI"  
+	echo "switch_ui             (dashboard or yacd) default '' Switch UI"  
 	echo "start                 (Subscription Name) defaul '' Current configuration"
 	echo "stop                  (not var)"
 	echo "restart               (Subscription Name) default'' Current configuration"
 	echo "reload                (Subscription Name) default'' Current configuration"
-    echo "add                   (*subscribe) name::url::date::0/1"
+    echo "add                   (*subscribe) name::url::date::yes/no"
 	echo "del                   (*Subscription Name)"
 	echo "sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
 	echo "auto_start            (*true/false)"
-	echo "auto_auto_sub         (not var)"
+	echo "auto_sub              (not var)"
 
 }
 
@@ -228,11 +231,13 @@ function install(){
             then 
                 echo "获取版本失败"
                 exit 1
-            fi            
+            fi
         fi
         # 下载clash
         echo "version: ${version}"
         wget -O ${clash_catalog}/${platform}-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
+        # 下载UI
+        switch_ui 
         if [[ -f ${clash_catalog}/${platform}-${version}.gz ]]
         then
             # 解压clash
@@ -243,6 +248,8 @@ function install(){
             chmod 755 ${clash_path}
             # 向clash配置文件写入当前版本
 	        set_clashtool_config 'version' "${version}"
+            echo "install dashboard UI"
+            switch_ui "dashboard"
             echo "install clash succeeded"
         else
             echo "Download failed"
@@ -256,9 +263,19 @@ function uninstall(){
 	if [[ -f "${clash_path}" ]]
     then 
         # 停止clash运行
-        stop
-        # 删除clash程序文件
-        rm -rf ${clash_path}
+        autostop
+        if [[ $1 == "all" ]]
+        then
+            # 删除自动启动配置
+            auto_start false
+            # 删除自动更新配置文件
+            auto_sub false
+            # 删除Clash所有文件
+            rm -rf ${clash_catalog}
+        else
+            # 删除clash程序文件
+            rm -rf ${clash_path}
+        fi
     fi
     echo "Uninstall succeeded"
 }
@@ -305,6 +322,8 @@ function update(){
                 chmod 755 ${clash_path}
                 # 更新clashtool配置文件中版本号
 	    	    set_clashtool_config 'version' "${version}"
+                # 更新UI
+                switch_ui ''
                 echo "Update succeeded"
 	    	    # 根据更新前状态是否自动启动
                 autostart
@@ -315,127 +334,35 @@ function update(){
     fi
 }
 
-# 安装UI
-function install_ui(){
+# 切换UI
+function switch_ui(){
     local ui=$1
-    # 判断UI是否已安装
-	if [[ -d "${clash_gh_pages_catalog}" ]]
+    # 没有指定UI则默认更新当前使用UI
+    if [[ -z "${ui}" ]]
     then
-        echo "Clash UI installed"
-	else
-        # 没有指定UI 默认安装配置设置的UI
-        if [[ -z "${ui}" ]]
-        then
-	        ui=$(get_clashtool_config 'ui')
-	    fi
-        echo "Start install ${ui} ui"
-        # 下载UI安装包
-	    if [[ "${ui}" == "dashboard" ]]
-        then
-            local ui_name="clash-dashboard-gh-pages" 
-	    	wget -O ${clash_catalog}/gh-pages.zip https://codeload.github.com/Dreamacro/clash-dashboard/zip/refs/heads/gh-pages
-        elif [[ "${ui}" == "yacd" ]]
-        then
-	        local ui_name="yacd-gh-pages" 
-            wget -O ${clash_catalog}/gh-pages.zip https://codeload.github.com/haishanh/yacd/zip/refs/heads/gh-pages
-	    else
-            echo "Command error, UI is dashboard or yacd"
-	    	exit 1
-	    fi 
-        if [[ -f "${clash_catalog}/gh-pages.zip" ]]
-        then
-            # 解压
-            unzip -d ${clash_catalog} ${clash_catalog}/gh-pages.zip
-            # 重命名
-            mv ${clash_catalog}/${ui_name} ${clash_gh_pages_catalog}
-            # 在配置默认配置文件中写入UI配置信息
-	        if grep -q '^external-ui:' "${config_path}" 
-            then
-                echo "external-ui: ${clash_gh_pages_catalog}" >> ${config_path} 
-            else
-                # 转义特殊字符
-                local temp=$(echo "${clash_gh_pages_catalog}" | sed 's/\//\\\//g')
-                sed -i "s/external-ui:/cexternal-ui: ${temp}/g" ${config_path}
-            fi
-            # 在clashtool配置文件中写入安装的ui名称
-            set_clashtool_config 'ui' "${ui}"
-            # 删除下载的临时文件
-            rm -rf ${clash_catalog}/gh-pages.zip
-            # 重载配置
-            autorestart 
-	        echo "${ui} UI Install succeeded" 
-        else
-            echo "Download failed"
-        fi
-	fi
-}
-
-# 卸载UI
-function uninstall_ui(){
-    echo "Start uninstalling UI"
-    # 停止运行
-    stop
-    # 删除UI相关文件
-    if [[ -d "${clash_gh_pages_catalog}" ]]
-    then
-	    rm -rf ${clash_gh_pages_catalog}
+        ui=$(get_clashtool_config 'ui')
     fi
-    # 删除用户配置UI相关配置
-	sed -i '/^external-ui: /d' ${config_path}
-    # 根据前状态判断是否自动重重启
-    autostart
-	echo "uninstall UI succeeded"
-}
-
-# 更新UI
-function update_ui(){
-    local ui=$1
-    # 判断UI是否安装
-    if [[ -d "${clash_gh_pages_catalog}" ]]
-     then
-        echo "Start UI Update"
-        # 没有指定UI则默认更新当前使用UI
-        if [[ -z "${ui}" ]]
-        then
-            ui=$(get_clashtool_config 'ui')
-        fi
-        # 下载UI安装包
-	    if [[ "${ui}" == "dashboard" ]]
-        then
-            ui="clash-dashboard-gh-pages" 
-	    	wget -O ${clash_catalog}/gh-pages.zip https://github.com/Dreamacro/clash-dashboard/refs/heads/gh-pages.zip
-        elif [[ "${ui}" == "yacd" ]]
-        then
-	        ui="yacd-gh-pages" 
-            wget -O ${clash_catalog}/gh-pages.zip https://github.com/haishanh/yacd/archive/refs/heads/gh-pages.zip
-	    else
-            echo "Command error, UI is dashboard or yacd"
-	    	exit 1
-	    fi 
-        # 删除当前已安装UI
-        rm -rf ${clash_gh_pages_catalog}
-        # 解压
-        unzip -d ${clash_catalog} ${clash_catalog}/gh-pages.zip
-        # 重命名
-        mv ${clash_catalog}/${ui} ${clash_gh_pages_catalog}
-        # 在clashtool配置文件中写入ui
-        set_clashtool_config 'ui' "${ui}"
-        # 重载配置
-        autoreload
-        echo "UI updated successfully"
+    # 下载UI安装包
+    if [[ "${ui}" == "dashboard" ]]
+    then
+        ui="clash-dashboard-gh-pages" 
+        wget -O ${clash_catalog}/gh-pages.zip https://github.com/Dreamacro/clash-dashboard/refs/heads/gh-pages.zip
+    elif [[ "${ui}" == "yacd" ]]
+    then
+        ui="yacd-gh-pages" 
+        wget -O ${clash_catalog}/gh-pages.zip https://github.com/haishanh/yacd/archive/refs/heads/gh-pages.zip
     else
-        echo "UI not installed"
-    fi
-}
-
-function uninstall_all(){
-    echo "Start Uninstall"
-    stop
-    if [[ -d "${clash_catalog}" ]]
-    then
-        rm -rf ${clash_catalog}
-    fi
-    echo "uninstall successfully"
+        echo "Command error, UI is dashboard or yacd"
+        exit 1
+    fi 
+    # 删除当前已安装UI
+    rm -rf ${clash_gh_pages_catalog}
+    # 解压
+    unzip -d ${clash_catalog} ${clash_catalog}/gh-pages.zip
+    # 重命名
+    mv ${clash_catalog}/${ui} ${clash_gh_pages_catalog}
+    # 在clashtool配置文件中写入ui
+    set_clashtool_config 'ui' "${ui}"
 }
 
 # 启动clash
@@ -487,8 +414,7 @@ function stop (){
 # 重启clash
 function restart (){
     stop
-    start $1
-    echo "restart succeeded"
+    start
 }
 
 # 重载clash配置文件
@@ -543,8 +469,8 @@ function reload (){
 # 显示当所有订阅
 function list(){
     local names=$(get_subscribe_config '' 'names')
-    names=${names/%,}
-    get_subscribe_config '' 'names' | while IFS=$',' read -r name
+    array=(${names//,/ }) 
+    for var in ${array[@]}
     do
         if [[ -n ${name} ]] 
         then
@@ -558,7 +484,7 @@ function list(){
             echo "update: ${update}"
             echo "====================="
         fi
-    done
+    done 
 }
 
 # 添加订阅
@@ -576,7 +502,7 @@ function add(){
     local exis=$(existence_subscrib_config ${name})
     if [[ ${exis} -ne '0' ]]
     then 
-         # 创建配置
+        # 创建配置
         create_subscrib_config "${name}" "${url}" "${interval}" "${update}"
         # 更改 subscrib name 名称
         local names=$(get_subscribe_config '' 'names')${name}','
@@ -621,43 +547,37 @@ function del(){
 # 更新订阅
 function update_sub(){
     local name=$1
+    # 当前使用配置文件
+    local use=$(get_subscribe_config '' 'use') 
     # 是否更新所有订阅
     if [[ "${name}" == "all" ]]
     then
-        # 更新所有订阅配置
-        IFS_old=$IFS
-        IFS=$','
+    # 更新所有订阅配置
     local names=$(get_subscribe_config '' 'names')
     names=${names/%,}
     for name in ${names}
-        do
-            download_sub "${name}"
-        done
-    IFS=$IFS_old
-    autoreload
+    do
+        download_sub "${name}"
+    done
     else
-        local use=$(get_subscribe_config '' 'use') 
         # 更新当前使用配置
         if [[ -z "${name}" ]]
         then
             download_sub "${use}"
-            autoreload
         else
             # 更新指定订阅配置
             exis=$(existence_subscrib_config "${name}")
             if [[ ${exis} == '0' ]]
             then
                 download_sub "${name}"
-                if [[ ${use} == ${name} ]]
-                then
-                    autoreload
-                fi
                 echo "update subscribe ok" 
             else
                 echo "No such subscription"
             fi
         fi
     fi
+    # 重载配置文件
+    autoreload "$use"
 }
 
 # 下载订阅配置
@@ -672,8 +592,6 @@ function download_sub(){
 
 # 根据配置生成定时任务文件
 function auto_sub(){
-    IFS_old=$IFS
-    IFS=$','
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
     local names=$(get_subscribe_config '' 'names')
@@ -696,7 +614,6 @@ function auto_sub(){
             echo "0 */${interval} * * * sh ${tool_catalog}/${patt} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
         fi
     done
-    IFS=$IFS_old
     # 启动定时任务
     crontab ${config_catalog}/temp_crontab
     # 删除临时定时任务
@@ -742,23 +659,14 @@ function main(){
         "install")
             install "${var}"
             ;;
-        "install_ui")
-            install_ui "${var}"
-            ;;
         "uninstall")
-            uninstall
-            ;;
-        "uninstall_ui")
-            uninstall_ui
+            uninstall "${var}"
             ;;
         "update")
             update "${var}"
             ;;
-        "update_ui")
+        "switch_ui")
             update_ui "${var}"
-            ;;
-        "uninstall_all")
-            uninstall_all
             ;;
         "start")
             start "${var}"

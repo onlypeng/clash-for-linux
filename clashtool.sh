@@ -198,13 +198,13 @@ function myhepl(){
 	echo "fun                                     var"
 	echo "install               (version) default'' Install the latest version"
 	echo "uninstall             (is all) default'' Delete or not configuration"     
-	echo "update                (not var)"
+	echo "update                (version) default'' Install the latest version"
 	echo "switch_ui             (dashboard or yacd) default '' Switch UI"  
 	echo "start                 (Subscription Name) defaul '' Current configuration"
 	echo "stop                  (not var)"
 	echo "restart               (Subscription Name) default'' Current configuration"
 	echo "reload                (Subscription Name) default'' Current configuration"
-    echo "add                   (*subscribe) name::url::date::yes/no"
+    echo "add                   (*subscribe) name::url::date::true/false"
 	echo "del                   (*Subscription Name)"
 	echo "sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
@@ -470,7 +470,7 @@ function reload (){
 function list(){
     local names=$(get_subscribe_config '' 'names')
     array=(${names//,/ }) 
-    for var in ${array[@]}
+    for name in ${array[@]}
     do
         if [[ -n ${name} ]] 
         then
@@ -554,8 +554,8 @@ function update_sub(){
     then
     # 更新所有订阅配置
     local names=$(get_subscribe_config '' 'names')
-    names=${names/%,}
-    for name in ${names}
+    array=(${names//,/ }) 
+    for name in ${array[@]}
     do
         download_sub "${name}"
     done
@@ -595,8 +595,8 @@ function auto_sub(){
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
     local names=$(get_subscribe_config '' 'names')
-    names=${names/%,}
-    for name in ${names}
+    array=(${names//,/ }) 
+    for name in ${array[@]}
     do  
         local patt="clashtool.sh update_sub ${name}"
         # 查看任务中是否有此任务

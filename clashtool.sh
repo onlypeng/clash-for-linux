@@ -675,7 +675,7 @@ function main(){
             stop
             ;;
         "restart")
-            restart "${var}"
+            restart
             ;;
         "reload")
             reload "${var}"

@@ -24,7 +24,7 @@ clashtool_config_path="${config_catalog}/clashtool.ini"
 # 当前脚本目录
 tool_catalog=$(cd "$(dirname "$0")";pwd)
 # 保存程序运行状态
-state=$(pgrep f | grep "${clash_path}" | grep -v grep | awk '{print $1}')
+state=$(pidof "${clash_path}")
 
 # 公共配置操作函数 开始
 
@@ -205,7 +205,7 @@ function myhepl(){
 	echo "del                   (*Subscription Name)"
 	echo "sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
-	echo "auto_start            (*true/false)"
+	echo "auto_start            (true/false)"
 	echo "auto_auto_sub         (not var)"
 
 }

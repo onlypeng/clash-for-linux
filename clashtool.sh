@@ -24,7 +24,7 @@ clashtool_config_path="${config_catalog}/clashtool.ini"
 # 当前脚本目录
 tool_catalog=$(cd "$(dirname "$0")";pwd)
 # 保存程序运行状态
-state=$(pidof "${clash_path}")
+state=$(ps -ef | grep "${clash_path}" | grep -v grep | awk {print $2})
 
 # 公共配置操作函数 开始
 

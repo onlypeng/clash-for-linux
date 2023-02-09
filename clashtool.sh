@@ -243,7 +243,7 @@ function install(){
             # 向clash配置文件写入当前版本
 	        set_clashtool_config 'version' "${version}"
             echo "install dashboard UI"
-            switch_ui "dashboard"
+            switch_ui
             echo "install clash succeeded"
         else
             echo "Download failed"
@@ -332,7 +332,7 @@ function update(){
 # 切换UI
 function switch_ui(){
     local ui=$1
-    # 没有指定UI则默认更新当前使用UI
+    # 没有指定UI则使用配置中指定UI
     if [[ -z "${ui}" ]]
     then
         ui=$(get_clashtool_config 'ui')

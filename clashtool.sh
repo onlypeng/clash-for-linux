@@ -341,7 +341,7 @@ function switch_ui(){
     if [[ "${ui}" == "dashboard" ]]
     then
         ui="clash-dashboard-gh-pages" 
-        wget -O ${clash_catalog}/gh-pages.zip https://github.com/Dreamacro/clash-dashboard/refs/heads/gh-pages.zip
+        wget -O ${clash_catalog}/gh-pages.zip https://codeload.github.com/Dreamacro/clash-dashboard/zip/refs/heads/gh-pages
     elif [[ "${ui}" == "yacd" ]]
     then
         ui="yacd-gh-pages" 

@@ -369,7 +369,7 @@ function start (){
         if [[ -f "${clash_path}" ]]
         then
             # 启动clash
-            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1
+            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1 & 
             state="$!"
             # 载入配置
             reload "$1"

@@ -156,12 +156,12 @@ function autoecreate () {
 	# 创建clashtool和订阅配置文件
 	if [[ ! -f "${clashtool_config_path}" ]]
     then
-        echo -e "[clashtool]\nui=dashboard\nconfig=default\nversion=v0.0.0\npid=\n\n[subscribe]\nnames=\nuse=" > ${clashtool_config_path}
+        echo -e "[clashtool]\nui=dashboard\nconfig=default\nversion=v0.0.0\n\n[subscribe]\nnames=\nuse=" > ${clashtool_config_path}
 	fi
     # 创建默认clash配置文件
     if [[ ! -f "${config_path}" ]]
     then
-        echo -e "port: 7890\nsocks-port: 7891\nallow-lan: true\nmode: Rule\nlog-level: error\nexternal-controller: 0.0.0.0:9090\nsecret: 12123" >> ${config_path}
+        echo -e "port: 7890\nsocks-port: 7891\nallow-lan: true\nmode: Rule\nlog-level: error\nexternal-controller: 0.0.0.0:9090\nexternal-ui: ${clash_gh_pages_catalog}\nsecret: 12123" >> ${config_path}
 	fi
 }
 
@@ -371,10 +371,7 @@ function start (){
         if [[ -f "${clash_path}" ]]
         then
             # 启动clash
-            nohup ${clash_path} -d ${config_catalog} > ${config_catalog}/clash.log 2>&1 &
-            state="$!"
-            # 写入clash PID
-            set_clashtool_config 'pid' "${state}"
+            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1 &
             echo 'Starting...'
             sleep 10
             # 载入配置
@@ -393,17 +390,9 @@ function stop (){
     # 判断程序是否运行
     if [[ -n "${state}" ]]
     then
-        # 判断PID文件是否存在
-        local pid
-        pid=$(get_clashtool_config 'pid')
-        if [[ -n "${pid}" ]]
-        then 
-            # 根据clash PID 结束Clash
-            kill -9 "${pid}"
-            echo "Stop succeeded"
-        else
-            echo "Please use this script to start the clash"
-        fi
+       # 根据clash PID 结束Clash
+        kill -9 "${state}"
+        echo "Stop succeeded"
     else
         echo "not running"
     fi
@@ -451,7 +440,7 @@ function reload (){
             sed -i '/^'"${line%: *}"'/d' ${config_catalog}/temp_config.yaml
         done
     fi
-    local por secret
+    local port secret
     port=$(cat ${config_path} | grep '^external-controller: ' | awk -F ':' '{print $3}' | sed "s/[\'\"]//g")
     port=$([ -z "${port}" ] && echo "9090" || echo "${port}")
     secret=$(cat ${config_path} | grep '^secret: ' | awk -F ': ' '{print $2}' | sed "s/[\'\"]//g")

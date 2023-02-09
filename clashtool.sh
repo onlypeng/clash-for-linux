@@ -451,7 +451,7 @@ function reload (){
             sed -i '/^'"${line%: *}"'/d' ${config_catalog}/temp_config.yaml
         done
     fi
-    local por,secret
+    local por secret
     port=$(cat ${config_path} | grep '^external-controller: ' | awk -F ':' '{print $3}' | sed "s/[\'\"]//g")
     port=$([ -z "${port}" ] && echo "9090" || echo "${port}")
     secret=$(cat ${config_path} | grep '^secret: ' | awk -F ': ' '{print $2}' | sed "s/[\'\"]//g")
@@ -467,14 +467,14 @@ function reload (){
 
 # 显示当所有订阅
 function list(){
-    local names,array
+    local names array
     names=$(get_subscribe_config '' 'names')
     array=(${names//,/ }) 
     for name in ${array[@]}
     do
         if [[ -n ${name} ]] 
         then
-            local url,interval,update
+            local url interval update
             url=$(get_subscribe_config "${name}" "url")
             interval=$(get_subscribe_config "${name}" "interval")
             update=$(get_subscribe_config "${name}" "update")
@@ -491,7 +491,7 @@ function list(){
 # 添加订阅
 function add(){
     local input=$1
-    local name,url,interval,update
+    local name url interval update
     name=$(echo ${input} | awk -F '::' '{print $1}')
     url=$(echo ${input} | awk -F '::' '{print $2}')
     interval=$(echo ${input} | awk -F '::' '{print $3}')
@@ -553,12 +553,12 @@ function del(){
 function update_sub(){
     local name=$1
     # 当前使用配置文件
-    local use=$(get_subscribe_config '' 'use') 
+    local use names array
+    use=$(get_subscribe_config '' 'use') 
     # 是否更新所有订阅
     if [[ "${name}" == "all" ]]
     then
     # 更新所有订阅配置
-    local names,array
     names=$(get_subscribe_config '' 'names')
     array=(${names//,/ }) 
     for name in ${array[@]}
@@ -601,7 +601,7 @@ function download_sub(){
 function auto_sub(){
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
-    local names,array
+    local names array
     names=$(get_subscribe_config '' 'names')
     array=(${names//,/ }) 
     for name in ${array[@]}

@@ -256,7 +256,7 @@ function install(){
 # 卸载clash
 function uninstall(){
     # 删除clash
-	if [[ -f "${clash_path}" ]]
+	if [[ -f "${clash_catalog}" ]]
     then 
         # 停止clash运行
         autostop

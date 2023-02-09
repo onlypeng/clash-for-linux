@@ -34,7 +34,8 @@ function ini_get_value()
     local file=$1
     local sec=$2
     local key=$3
-    awk -F "[=;#]+" '/^\[[ \t]*'"${sec}"'[ \t]*\]/{a=1}a==1&&$1~/^[ \t]*'"${key}"'[ \t]*/{gsub(/[ \t]+/,"",$2);print $2;exit}' "${file}"
+    local val=$(awk -F "[=;#]+" '/^\[[ \t]*'"${sec}"'[ \t]*\]/{a=1}a==1&&$1~/^[ \t]*'"${key}"'[ \t]*/{gsub(/[ \t]+/,"",$2);print $2;exit}' "${file}") 
+    echo "${val}"
 }
 
  # 更新值
@@ -73,7 +74,8 @@ function ini_del_value() {
 # 获取clashtool配置
 function get_clashtool_config() {
     local key=$1
-    ini_get_value ${clashtool_config_path} 'clashtool' "${key}"
+    local val=$(ini_get_value ${clashtool_config_path} 'clashtool' "${key}")
+    echo "${val}"
 }
 
 # 写入clashtool配置
@@ -93,7 +95,8 @@ function get_subscribe_config() {
     else
         local sec="subscribe_$1"
     fi
-    ini_get_value "${clashtool_config_path}" "${sec}" "${key}"
+    local val=$(ini_get_value "${clashtool_config_path}" "${sec}" "${key}")
+    echo ${val}
 }
 
 # 写入订阅配置
@@ -113,7 +116,8 @@ function set_subscribe_config() {
 # 判断订阅是否存在
 function existence_subscrib_config(){
     local sec=$1
-    ini_existence_section ${clashtool_config_path} "subscribe_${sec}"
+    local exis=$(ini_existence_section ${clashtool_config_path} "subscribe_${sec}")
+    echo ${exis}
 }
 # 创建订阅配置
 function create_subscrib_config(){
@@ -129,6 +133,15 @@ function del_subscribe_config() {
     local sec=subscribe_$1;
     # 转义特殊字符
     sed -i "/^\[${sec}\]/,/^\[/d" ${clashtool_config_path}
+}
+# 分割字符成数组
+function split() {
+    local str=$1
+    local separator=$2 || ,
+    OLD_IFS="$IFS" 
+    IFS="$separator" 
+    arr=("$str") 
+    IFS="$OLD_IFS" 
 }
 
 # 自动创建clash目录和相关配置文件
@@ -284,8 +297,7 @@ function update(){
         echo "Clash not installed"
     else
         # 获取当前版本
-        local current
-	    current=$(get_clashtool_config 'version')
+	    local current=$(get_clashtool_config 'version')
         # 没有指定版本则更新最新版本
         if [[ -z "${version}" ]]
         then
@@ -394,8 +406,7 @@ function stop (){
     if [[ -n "${state}" ]]
     then
         # 判断PID文件是否存在
-        local pid
-        pid=$(get_clashtool_config 'pid')
+        local pid=$(get_clashtool_config 'pid')
         if [[ -n "${pid}" ]]
         then 
             # 根据clash PID 结束Clash
@@ -451,10 +462,9 @@ function reload (){
             sed -i '/^'"${line%: *}"'/d' ${config_catalog}/temp_config.yaml
         done
     fi
-    local port secret
-    port=$(cat ${config_path} | grep '^external-controller: ' | awk -F ':' '{print $3}' | sed "s/[\'\"]//g")
-    port=$([ -z "${port}" ] && echo "9090" || echo "${port}")
-    secret=$(cat ${config_path} | grep '^secret: ' | awk -F ': ' '{print $2}' | sed "s/[\'\"]//g")
+    local port=$(cat ${config_path} | grep '^external-controller: ' | awk -F ':' '{print $3}' | sed "s/[\'\"]//g")
+    local port=$([ -z "${port}" ] && echo "9090" || echo "${port}")
+    local secret=$(cat ${config_path} | grep '^secret: ' | awk -F ': ' '{print $2}' | sed "s/[\'\"]//g")
     # 重载配置
     if [[ -z "${secret}" ]]
     then
@@ -467,16 +477,15 @@ function reload (){
 
 # 显示当所有订阅
 function list(){
-    local names
-    names=$(get_subscribe_config '' 'names')
-    for name in "${names[@]}"
+    local names=$(get_subscribe_config '' 'names')
+    split "$names"
+    for name in ${arr[@]}
     do
         if [[ -n ${name} ]] 
         then
-            local url interval update
-            url=$(get_subscribe_config "${name}" "url")
-            interval=$(get_subscribe_config "${name}" "interval")
-            update=$(get_subscribe_config "${name}" "update")
+            local url=$(get_subscribe_config "${name}" "url")
+            local interval=$(get_subscribe_config "${name}" "interval")
+            local update=$(get_subscribe_config "${name}" "update")
             echo "      ${name}"
             echo "====================="
             echo "url: ${url}"
@@ -490,24 +499,22 @@ function list(){
 # 添加订阅
 function add(){
     local input=$1
-    local name url interval update exis 
-    name=$(echo "${input}" | awk -F '::' '{print $1}')
-    url=$(echo "${input}" | awk -F '::' '{print $2}')
-    interval=$(echo "${input}" | awk -F '::' '{print $3}')
-    update=$(echo "${input}" | awk -F '::' '{print $4}')
+    local name=$(echo ${input} | awk -F '::' '{print $1}')
+    local url=$(echo ${input} | awk -F '::' '{print $2}')
+    local interval=$(echo ${input} | awk -F '::' '{print $3}')
+    local update=$(echo ${input} | awk -F '::' '{print $4}')
     if [[ -z ${name} || -z ${url} || -z ${interval} || -z ${update} ]]
     then
         echo "Parameter format error. Configuration name::Subscription address::Auto subscription time (hour)::Auto subscription (true/false)"
         exit 1
     fi
-    exis=$(existence_subscrib_config "${name}")
+    local exis=$(existence_subscrib_config ${name})
     if [[ ${exis} -ne '0' ]]
     then 
         # 创建配置
         create_subscrib_config "${name}" "${url}" "${interval}" "${update}"
         # 更改 subscrib name 名称
-        local names
-        names=$(get_subscribe_config '' 'names')${name}'#'
+        local names=$(get_subscribe_config '' 'names')${name}','
         set_subscribe_config '' 'names' "${names}"
         echo "Add subscribe succeeded"
     else
@@ -523,8 +530,7 @@ function add(){
 # 删除订阅
 function del(){
     local name=$1
-    local exis
-    exis=$(existence_subscrib_config "${name}")
+    local exis=$(existence_subscrib_config "${name}")
     if [[ ${exis} -ne 0 ]]
     then
         echo "The subscription was not found"
@@ -551,14 +557,14 @@ function del(){
 function update_sub(){
     local name=$1
     # 当前使用配置文件
-    local use names
-    use=$(get_subscribe_config '' 'use') 
+    local use=$(get_subscribe_config '' 'use') 
     # 是否更新所有订阅
     if [[ "${name}" == "all" ]]
     then
     # 更新所有订阅配置
-    names=$(get_subscribe_config '' 'names')
-    for name in "${names[@]}"
+    local names=$(get_subscribe_config '' 'names')
+    split "$names"
+    for name in ${arr[@]}
     do
         download_sub "${name}"
     done
@@ -586,8 +592,7 @@ function update_sub(){
 # 下载订阅配置
 function download_sub(){
     local name=$1
-    local url
-    url=$(get_subscribe_config "${name}" "url")
+    local url=$(get_subscribe_config "${name}" "url")
     echo "start dowload: ${name}.conf"
     wget -O ${subscribe_config_catalog}/${name}.new.yaml ${url}
     mv ${subscribe_config_catalog}/${name}.new.yaml ${subscribe_config_catalog}/${name}.yaml
@@ -598,9 +603,9 @@ function download_sub(){
 function auto_sub(){
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
-    local names
-    names=$(get_subscribe_config '' 'names')
-    for name in "${names[@]}"
+    local names=$(get_subscribe_config '' 'names')
+    split "$names"
+    for name in ${arr[@]}
     do  
         local patt="clashtool.sh update_sub ${name}"
         # 查看任务中是否有此任务
@@ -609,14 +614,12 @@ function auto_sub(){
             # 有则删除
             sed -i "/${patt}/d" ${config_catalog}/temp_crontab
         fi
-        local update
-        update=$(get_subscribe_config "${name}" "update")
+        local update=$(get_subscribe_config "${name}" "update")
         # 查看是否启用自动更新订阅
         if [[ "${update}" == 'true' ]]
         then
             # 添加定时任务
-            local interval
-            interval=$(get_subscribe_config "${name}" 'interval')
+            local interval=$(get_subscribe_config "${name}" 'interval')
             echo "0 */${interval} * * * sh ${tool_catalog}/${patt} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
         fi
     done

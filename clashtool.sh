@@ -259,7 +259,7 @@ function uninstall(){
 	if [[ -f "${clash_catalog}" ]]
     then 
         # 停止clash运行
-        autostop
+        autostop false
         # 关闭自动启动
         powerboot false
         if [[ $1 == "all" ]]

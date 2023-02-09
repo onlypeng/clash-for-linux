@@ -20,27 +20,19 @@ update：更新clash <br>
 &emsp;&emsp;例：v1.11.8 更新clash版本 <br>
 &emsp;&emsp;默认更新clash最新版本 <br>
 uninstall：卸载clash <br>
-&emsp;&emsp;不存在参数 <br>
-install_ui：安装clashUI <br>
-&emsp;&emsp;dashboard：安装dashboardUI @https://github.com/Dreamacro/clash-dashboard <br>
-&emsp;&emsp;yacd：安装yacdUI @https://github.com/haishanh/yacd <br>
-&emsp;&emsp;默认安装dashboardUI <br>
-update_ui：更新clashUI <br>
+&emsp;&emsp;《all》 卸载同步删除配置 <br>
+&emsp;&emsp;默认只卸载Clash <br>
+swithc_ui：切换clashUI <br>
 &emsp;&emsp;dashboard：更新或更换dashboardUI @https://github.com/Dreamacro/clash-dashboard <br>
 &emsp;&emsp;yacd：更新或更换yacdUI @https://github.com/haishanh/yacd <br>
 &emsp;&emsp;默认更新当前安装UI <br>
-uninstall_ui：卸载UI <br>
-&emsp;&emsp;不存在参数 <br>
-uninstall_all：卸载并删除相关文件 <br>
-&emsp;&emsp;不存在参数 <br>
 start: 启动clash <br>
 &emsp;&emsp;《配置文件名称》 <br>
 &emsp;&emsp;默认当前使用配置 <br>
 stop: 停止clash <br>
 &emsp;&emsp;没有参数 <br>
 restart: 重启clash <br>
-&emsp;&emsp;《配置文件名称》 <br>
-&emsp;&emsp;默认当前使用配置 <br>
+&emsp;&emsp;没有参数，使用前使用配置 <br>
 reload: 重载clash配置文件 <br>
 &emsp;&emsp;《配置文件名称》 <br>
 &emsp;&emsp;默认当前使用配置 <br>

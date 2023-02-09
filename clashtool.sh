@@ -490,10 +490,10 @@ function add(){
         echo "Parameter format error. Configuration name::Subscription address::Auto subscription time (hour)::Auto subscription (true/false)"
         exit 1
     fi
-    local exis
+    local names exis
     exis=$(existence_subscrib_config ${name})
     if [[ ${exis} -ne '0' ]]
-    then 
+    then
         # 创建配置
         create_subscrib_config "${name}" "${url}" "${interval}" "${update}"
         # 更改 subscrib name 名称
@@ -501,12 +501,16 @@ function add(){
         names=$(get_subscribe_config '' 'names')${name}','
         set_subscribe_config '' 'names' "${names}"
         echo "Add subscribe succeeded"
+        
     else
         # 更新配置
         set_subscribe_config "${name}" 'url' "${url}"
         set_subscribe_config "${name}" 'interval' "${interval}"
         set_subscribe_config "${name}" 'update' "${update}"
+        echo "Update subscribe succeeded"
     fi
+    # 更新配置定时任务
+    auto_sub
     # 下载配置
     download_sub "${name}" 
 }
@@ -520,15 +524,14 @@ function del(){
     then
         echo "The subscription was not found"
     else
+        # 关闭自动更新
+        set_subscribe_config "${name}" 'update' "false"
+        # 更新配置定时任务
+        auto_sub
         # 删除配置
         del_subscribe_config "${name}"
-        # 删除配置列表
+        # 删除配置sub列表
         sed -i "s/${name},//g" ${clashtool_config_path}
-        # 删除定时更新
-        crontab -l > ${config_catalog}/temp_crontab
-        sed -i "/clashtool.sh update_sub ${name} >>/d" ${config_catalog}/temp_crontab
-        crontab ${config_catalog}/temp_crontab
-        rm -f ${config_catalog}/temp_crontab
         # 删除下载配置文件
         if [[ -f "${subscribe_config_catalog}/${name}.yaml" ]]
         then 

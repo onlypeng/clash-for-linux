@@ -591,6 +591,7 @@ function download_sub(){
 
 # 根据配置生成定时任务文件
 function auto_sub(){
+    local enable=${1 | 'true'}
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
     local names array
@@ -608,7 +609,7 @@ function auto_sub(){
         local update
         update=$(get_subscribe_config "${name}" "update")
         # 查看是否启用自动更新订阅
-        if [[ "${update}" == 'true' ]]
+        if [[ "${enable}" == 'true' && "${update}" == 'true' ]]
         then
             # 添加定时任务
             local interval

@@ -232,8 +232,6 @@ function install(){
         # 下载clash
         echo "version: ${version}"
         wget -O ${clash_catalog}/${platform}-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
-        # 下载UI
-        switch_ui 
         if [[ -f ${clash_catalog}/${platform}-${version}.gz ]]
         then
             # 解压clash

@@ -204,8 +204,8 @@ function myhepl(){
 	echo "del                   (*Subscription Name)"
 	echo "sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
-	echo "auto_start            (*true/false)"
-	echo "auto_sub              (not var)"
+	echo "powerboot            (*true/false)"
+	echo "crontab_sub              (not var)"
 
 }
 
@@ -261,11 +261,11 @@ function uninstall(){
         # 停止clash运行
         autostop
         # 关闭自动启动
-        auto_start false
+        powerboot false
         if [[ $1 == "all" ]]
         then
             # 关闭自动更新配置
-            auto_sub false
+            crontab_sub false
             # 删除Clash所有相关文件
             rm -rf ${clash_catalog}
         else
@@ -510,7 +510,7 @@ function add(){
         echo "Update subscribe succeeded"
     fi
     # 更新配置定时任务
-    auto_sub
+    crontab_sub
     # 下载配置
     download_sub "${name}" 
 }
@@ -527,7 +527,7 @@ function del(){
         # 关闭自动更新
         set_subscribe_config "${name}" 'update' "false"
         # 更新配置定时任务
-        auto_sub
+        crontab_sub
         # 删除配置
         del_subscribe_config "${name}"
         # 删除配置sub列表
@@ -590,7 +590,7 @@ function download_sub(){
 }
 
 # 根据配置生成定时任务文件
-function auto_sub(){
+function crontab_sub(){
     local enable=$1
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
@@ -621,11 +621,10 @@ function auto_sub(){
     crontab ${config_catalog}/temp_crontab
     # 删除临时定时任务
     rm -f ${config_catalog}/temp_crontab
-    echo "Scheduled update is enabled" 
 }
 
 # 设置自动启动（由于各linux系统环境差异原因暂无法使用）
-function auto_start(){
+function powerboot(){
     local start=$1
     crontab -l > ${config_catalog}/temp_crontab
     if [[ ${start} == "true" ]]
@@ -640,7 +639,7 @@ function auto_start(){
         sed -i "/clashtool.sh start/d" ${config_catalog}/temp_crontab
         echo "Auto start is off"
     else
-        echo "instructions error , true\false"
+        echo 'Instructions error : true or false'
         exit 1
     fi
     crontab ${config_catalog}/temp_crontab
@@ -695,11 +694,11 @@ function main(){
         "list")
             list
             ;;
-        "auto_start")
-            auto_start "${var}"
+        "powerboot")
+            powerboot "${var}"
             ;;
-        "auto_sub")
-            auto_sub "${var}"
+        "crontab_sub")
+            crontab_sub "${var}"
             ;;
         *)
             myhepl

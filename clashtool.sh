@@ -260,13 +260,13 @@ function uninstall(){
     then 
         # 停止clash运行
         autostop
+        # 关闭自动启动
+        auto_start false
         if [[ $1 == "all" ]]
         then
-            # 删除自动启动配置
-            auto_start false
-            # 删除自动更新配置文件
+            # 关闭自动更新配置
             auto_sub false
-            # 删除Clash所有文件
+            # 删除Clash所有相关文件
             rm -rf ${clash_catalog}
         else
             # 删除clash程序文件

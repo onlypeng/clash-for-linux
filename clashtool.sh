@@ -666,7 +666,7 @@ function main(){
             update "${var}"
             ;;
         "switch_ui")
-            update_ui "${var}"
+            switch_ui "${var}"
             ;;
         "start")
             start "${var}"

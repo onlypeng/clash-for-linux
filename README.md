@@ -23,8 +23,8 @@ uninstall：卸载clash <br>
 &emsp;&emsp;《all》 卸载同步删除配置 <br>
 &emsp;&emsp;默认只卸载Clash <br>
 swithc_ui：切换clashUI <br>
-&emsp;&emsp;dashboard：更新或更换dashboardUI @https://github.com/Dreamacro/clash-dashboard 默认<br>
-&emsp;&emsp;yacd：更新或更换yacdUI @https://github.com/haishanh/yacd <br>
+&emsp;&emsp;dashboard：更新或更换dashboard @https://github.com/Dreamacro/clash-dashboard 默认<br>
+&emsp;&emsp;yacd：更新或更换yacd @https://github.com/haishanh/yacd <br>
 &emsp;&emsp;默认更新当前安装UI <br>
 start: 启动clash <br>
 &emsp;&emsp;《配置文件名称》 <br>

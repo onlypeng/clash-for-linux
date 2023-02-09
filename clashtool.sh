@@ -365,16 +365,17 @@ function start (){
     # 判断是否正在运行
     if [[ -z "${state}" ]]
     then
-        echo "start start"
+        echo "Start loding..."
         if [[ -f "${clash_path}" ]]
         then
             # 启动clash
-            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1 &
+            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1
+            state=$!
             echo 'Starting...'
             sleep 10
             # 载入配置
             reload "$1"
-            echo "start ok"
+            echo "Start succeeded"
         else
             echo "Clash Program path not installed or specified"
         fi

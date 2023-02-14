@@ -23,8 +23,8 @@ uninstall：卸载clash <br>
 &emsp;&emsp;《all》 卸载同步删除配置 <br>
 &emsp;&emsp;默认只卸载Clash <br>
 swithc_ui：切换clashUI <br>
-&emsp;&emsp;dashboard：更新或更换dashboardUI @https://github.com/Dreamacro/clash-dashboard <br>
-&emsp;&emsp;yacd：更新或更换yacdUI @https://github.com/haishanh/yacd <br>
+&emsp;&emsp;dashboard：更新或更换dashboard @https://github.com/Dreamacro/clash-dashboard 默认<br>
+&emsp;&emsp;yacd：更新或更换yacd @https://github.com/haishanh/yacd <br>
 &emsp;&emsp;默认更新当前安装UI <br>
 start: 启动clash <br>
 &emsp;&emsp;《配置文件名称》 <br>
@@ -45,10 +45,12 @@ update_sub：更新配置文件 <br>
 &emsp;&emsp;默认更新全部配置 <br>
 list：显示全部订阅配置 <br>
 &emsp;&emsp;没有参数 <br>
-auto_start：设置开机自启（暂无法使用 <br>
+powerboot：设置开机自启（暂无法使用) <br>
 &emsp;&emsp;true：开启开机自启 <br>
 &emsp;&emsp;false：关闭开机自启 <br>
-auto_sub：设置定时自动更新 <br>
+crontab_sub：设置配置定时自动更新 <br>
+&emsp;&emsp;true：开启定时自动更新 默认<br>
+&emsp;&emsp;false：关闭配置定时自动更新 <br>
 &emsp;&emsp;没有参数 <br>
 help: 帮助文档 <br>
 &emsp;&emsp;没有参数 <br>

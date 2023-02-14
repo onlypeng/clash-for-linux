@@ -204,8 +204,8 @@ function myhepl(){
 	echo "del                   (*Subscription Name)"
 	echo "update_sub                   (Subscription Name) default'' Download all subscriptions"
 	echo "list                  (not var)"
-	echo "auto_start            (*true/false)"
-	echo "auto_sub              (not var)"
+	echo "powerboot            (*true/false)"
+	echo "crontab_sub              (not var)"
 
 }
 
@@ -232,8 +232,6 @@ function install(){
         # 下载clash
         echo "version: ${version}"
         wget -O ${clash_catalog}/${platform}-${version}.gz https://github.com/Dreamacro/clash/releases/download/${version}/${platform}-${version}.gz
-        # 下载UI
-        switch_ui 
         if [[ -f ${clash_catalog}/${platform}-${version}.gz ]]
         then
             # 解压clash
@@ -245,7 +243,7 @@ function install(){
             # 向clash配置文件写入当前版本
 	        set_clashtool_config 'version' "${version}"
             echo "install dashboard UI"
-            switch_ui "dashboard"
+            switch_ui
             echo "install clash succeeded"
         else
             echo "Download failed"
@@ -256,17 +254,17 @@ function install(){
 # 卸载clash
 function uninstall(){
     # 删除clash
-	if [[ -f "${clash_path}" ]]
+	if [[ -d "${clash_catalog}" ]]
     then 
         # 停止clash运行
-        autostop
+        autostop false
+        # 关闭自动启动
+        powerboot false
         if [[ $1 == "all" ]]
         then
-            # 删除自动启动配置
-            auto_start false
-            # 删除自动更新配置文件
-            auto_sub false
-            # 删除Clash所有文件
+            # 关闭自动更新配置
+            crontab_sub false
+            # 删除Clash所有相关文件
             rm -rf ${clash_catalog}
         else
             # 删除clash程序文件
@@ -334,7 +332,7 @@ function update(){
 # 切换UI
 function switch_ui(){
     local ui=$1
-    # 没有指定UI则默认更新当前使用UI
+    # 没有指定UI则使用配置中指定UI
     if [[ -z "${ui}" ]]
     then
         ui=$(get_clashtool_config 'ui')
@@ -343,7 +341,7 @@ function switch_ui(){
     if [[ "${ui}" == "dashboard" ]]
     then
         ui="clash-dashboard-gh-pages" 
-        wget -O ${clash_catalog}/gh-pages.zip https://github.com/Dreamacro/clash-dashboard/refs/heads/gh-pages.zip
+        wget -O ${clash_catalog}/gh-pages.zip https://codeload.github.com/Dreamacro/clash-dashboard/zip/refs/heads/gh-pages
     elif [[ "${ui}" == "yacd" ]]
     then
         ui="yacd-gh-pages" 
@@ -367,16 +365,15 @@ function start (){
     # 判断是否正在运行
     if [[ -z "${state}" ]]
     then
-        echo "start start"
+        echo "Start loding..."
         if [[ -f "${clash_path}" ]]
         then
             # 启动clash
-            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1 &
-            echo 'Starting...'
-            sleep 10
+            nohup ${clash_path} -f ${config_path} > ${config_catalog}/clash.log 2>&1 & 
+            state="$!"
             # 载入配置
             reload "$1"
-            echo "start ok"
+            echo "Start succeeded"
         else
             echo "Clash Program path not installed or specified"
         fi
@@ -510,7 +507,7 @@ function add(){
         echo "Update subscribe succeeded"
     fi
     # 更新配置定时任务
-    auto_sub
+    crontab_sub
     # 下载配置
     download_sub "${name}" 
 }
@@ -527,7 +524,7 @@ function del(){
         # 关闭自动更新
         set_subscribe_config "${name}" 'update' "false"
         # 更新配置定时任务
-        auto_sub
+        crontab_sub
         # 删除配置
         del_subscribe_config "${name}"
         # 删除配置sub列表
@@ -590,7 +587,8 @@ function download_sub(){
 }
 
 # 根据配置生成定时任务文件
-function auto_sub(){
+function crontab_sub(){
+    local enable=$1
     # 复制原定时任务
     crontab -l > ${config_catalog}/temp_crontab
     local names array
@@ -608,7 +606,7 @@ function auto_sub(){
         local update
         update=$(get_subscribe_config "${name}" "update")
         # 查看是否启用自动更新订阅
-        if [[ "${update}" == 'true' ]]
+        if [[ "${enable}" != 'false' && "${update}" == 'true' ]]
         then
             # 添加定时任务
             local interval
@@ -620,11 +618,10 @@ function auto_sub(){
     crontab ${config_catalog}/temp_crontab
     # 删除临时定时任务
     rm -f ${config_catalog}/temp_crontab
-    echo "Scheduled update is enabled" 
 }
 
 # 设置自动启动（由于各linux系统环境差异原因暂无法使用）
-function auto_start(){
+function powerboot(){
     local start=$1
     crontab -l > ${config_catalog}/temp_crontab
     if [[ ${start} == "true" ]]
@@ -639,7 +636,7 @@ function auto_start(){
         sed -i "/clashtool.sh start/d" ${config_catalog}/temp_crontab
         echo "Auto start is off"
     else
-        echo "instructions error , true\false"
+        echo 'Instructions error : true or false'
         exit 1
     fi
     crontab ${config_catalog}/temp_crontab
@@ -668,7 +665,7 @@ function main(){
             update "${var}"
             ;;
         "switch_ui")
-            update_ui "${var}"
+            switch_ui "${var}"
             ;;
         "start")
             start "${var}"
@@ -694,11 +691,11 @@ function main(){
         "list")
             list
             ;;
-        "auto_start")
-            auto_start "${var}"
+        "powerboot")
+            powerboot "${var}"
             ;;
-        "auto_sub")
-            auto_sub "${var}"
+        "crontab_sub")
+            crontab_sub "${var}"
             ;;
         *)
             myhepl

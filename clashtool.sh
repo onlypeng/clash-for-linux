@@ -611,7 +611,7 @@ function crontab_sub(){
             # 添加定时任务
             local interval
             interval=$(get_subscribe_config "${name}" 'interval')
-            echo "0 */${interval} * * * sh ${tool_catalog}/${patt} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
+            echo "0 */${interval} * * * bash ${tool_catalog}/${patt} >> ${config_catalog}/crontab.log 2>&1" >> ${config_catalog}/temp_crontab
         fi
     done
     # 启动定时任务

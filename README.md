@@ -13,8 +13,7 @@ clash信息获取地址：https://github.com/Dreamacro/clash/releases中clash-da
 ClasUI默认地址http://ip:9090/ui <br>
 
 详细信息可运行 ./clashtool help 查看 <br>
-
-https://github.com/Dreamacro/clash/releases<br>
+安装Clash的项目：https://github.com/Dreamacro/clash/releases<br>
 安装ClashUI的项目：<br>
 &nbsp;&nbsp;&nbsp;&nbsp;yacd：https://github.com/haishanh/yacd/tree/gh-pages<br>
 &nbsp;&nbsp;&nbsp;&nbsp;dashboard：https://github.com/Dreamacro/clash-dashboard/tree/gh-pages

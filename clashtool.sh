@@ -655,6 +655,9 @@ function main(){
         fi
     fi
     case "${fun}" in
+        "init")
+            echo "初始化成功：可以在《${config_catalog}》查看更改配置"
+            ;;
         "install")
             install "${var}"
             ;;

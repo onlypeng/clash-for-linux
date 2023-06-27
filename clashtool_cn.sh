@@ -2,7 +2,7 @@
 
 # 网页初始链接密码
 secret='12123'
-# clash平台，为空则自动获取，获取失败请自行填写
+# clash平台，默认自动获取，获取失败请自行填写
 platform=''
 
 # 当前脚本目录
@@ -56,7 +56,7 @@ get_platform() {
             echo "${machine_arch}"
             ;;
         *)
-            echo "Unable to determine the architecture type of the current operating system. Please fill in the configuration yourself"
+            echo "无法确定当前操作系统的体系结构类型。请自行填写配置"
             exit 1
             ;;
         esac
@@ -66,7 +66,7 @@ get_platform() {
 # 验证true false ''默认为true
 verify() {
     if [ "$1" != 'true' ] && [ "$1" != 'false' ]; then
-        echo "The parameter can only be true, false, or '', and '' defaults to true"
+        echo "参数只能是true、false 或 ''， ''默认为true"
         exit 1
     fi
 }
@@ -81,13 +81,13 @@ require() {
     elif command -v apk >/dev/null 2>&1; then
         package_manager="apk"
     else
-        echo "Unable to determine the package manager. Please install curl, wget, yq yourself"
+        echo "无法确定包管理器。请自行安装curl、wget、yq"
         exit 1
     fi
 
     # 检查并安装curl
     if ! command -v curl >/dev/null 2>&1; then
-        echo "Install curl..."
+        echo "安装 curl..."
         if [ "$package_manager" = "apt" ]; then
             apt install -y curl
         elif [ "$package_manager" = "yum" ]; then
@@ -99,7 +99,7 @@ require() {
 
     # 检查并安装wget
     if ! command -v wget >/dev/null 2>&1; then
-        echo "Install wget..."
+        echo "安装 wget..."
         if [ "$package_manager" = "apt" ]; then
             apt install -y wget
         elif [ "$package_manager" = "yum" ]; then
@@ -111,7 +111,7 @@ require() {
 
     # 检查并安装yq
     if ! command -v yq >/dev/null 2>&1; then
-        echo "Install yq..."
+        echo "安装 yq..."
         if [ "$package_manager" = "apt" ]; then
             apt install -y yq
         elif [ "$package_manager" = "yum" ]; then
@@ -123,7 +123,7 @@ require() {
 }
 
 init() {
-
+    echo '检查配置文件。。。。'
     # 创建clash目录
     if [ ! -d "${clash_catalog}" ]; then
         mkdir -p ${clash_catalog}
@@ -172,7 +172,7 @@ init() {
         } >>"$config_path"
     fi
 
-    echo "Initialization successful"
+    echo "配置文件初始化成功"
 }
 
 # 判断指定节是否存在
@@ -209,7 +209,7 @@ write_ini() {
             }
         ' "$file" >"$file.tmp" && mv "$file.tmp" "$file"
     else
-        echo "Section not found: $section"
+        echo "未找到配置节点: $section"
         # 如果节不存在，则添加新节和键值对
         echo "[$section]" >>"$file"
         echo "$key=$value" >>"$file"
@@ -232,7 +232,7 @@ delete_ini() {
             sed -i "/\[$section\]/,+1 { /^\[$section\]/! { /$key=/d } }" "$file"
         fi
     else
-        echo "Section not found: $section"
+        echo "未找到配置节点: $section"
     fi
 }
 
@@ -259,27 +259,27 @@ read_ini() {
             }
         ' "$file" || echo "Key not found: $key"
     else
-        echo "Section not found: $section"
+        echo "未找到配置节点: $section"
     fi
 }
 
 # 获取clashtool配置
 get_clashtool_config() {
     key=$1
-    read_ini ${clashtool_config_path} 'clashtool' "${key}"
+    read_ini "${clashtool_config_path}" 'clashtool' "${key}"
 }
 
 # 添加修改clashtool配置
 set_clashtool_config() {
     key=$1
     val=$2
-    write_ini ${clashtool_config_path} "clashtool" "${key}" "${val}"
+    write_ini "${clashtool_config_path}" "clashtool" "${key}" "${val}"
 }
 
 # 判断订阅是否存在
 existence_subscrib_config() {
     sec=$1
-    section_exists ${clashtool_config_path} "subscribe_${sec}"
+    section_exists "${clashtool_config_path}" "subscribe_${sec}"
     return $?
 }
 
@@ -366,7 +366,7 @@ install_clash() {
         # 获取clash最新版本号
         version=$(curl -k -s https://api.github.com/repos/Dreamacro/clash/releases/latest | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':' '{print $2}')
         if [ -z "${version}" ]; then
-            echo "Failed to obtain version"
+            echo "无法获取版本"
             exit 1
         fi
     fi
@@ -374,13 +374,13 @@ install_clash() {
     current=$(get_clashtool_config 'version')
     # 不是第一次安装则不显示当前版本
     if [ -n "${current}" ]; then
-        echo "Current version: ${current}"
+        echo "当前版本: ${current}"
     fi
     # 要安装的版本
-    echo "installed version: ${version}"
+    echo "安装版本: ${version}"
     # 判断版本是否相等
     if [ "${current}" = "${version}" ]; then
-        echo "No update required"
+        echo "无需更新"
         exit 0
     fi
     # 获取系统架构
@@ -398,7 +398,7 @@ install_clash() {
         # 向clash配置文件写入当前版本
         set_clashtool_config 'version' "${version}"
     else
-        echo "Download failed"
+        echo "下载失败..."
         exit 1
     fi
 }
@@ -421,7 +421,7 @@ install_ui() {
         ui="yacd-gh-pages"
         wget -O ${clash_catalog}/gh-pages.zip https://gh.ylpproxy.eu.org/https://github.com/haishanh/yacd/archive/refs/heads/gh-pages.zip
     else
-        echo "Command error, UI is dashboard or yacd"
+        echo "命令错误，UI只能为 dashboard 或 yacd"
         exit 1
     fi
     if [ -f "${clash_catalog}/gh-pages.zip" ]; then
@@ -434,7 +434,7 @@ install_ui() {
         # 删除已下载文件
         rm ${clash_catalog}/gh-pages.zip
     else
-        echo 'Failed to download UI'
+        echo '下载失败...'
         exit 1
     fi
 }
@@ -444,9 +444,9 @@ install() {
     version=$1
     # 判断是否已经安装clash
     if [ -f "${clash_path}" ]; then
-        echo "Clash installed"
+        echo "已安装 Clash"
     else
-        echo "Start installing clash"
+        echo "开始安装 Clash"
         # 安装依赖软件
         require
         # 初始化目录配置
@@ -455,7 +455,7 @@ install() {
         install_clash "$version"
         # 安装 ui
         install_ui
-        echo 'Successfully installed Clash'
+        echo '安装Clash成功'
     fi
 }
 
@@ -477,19 +477,19 @@ uninstall() {
             rm -rf ${clash_path}
         fi
     fi
-    echo "Uninstall succeeded"
+    echo "卸载成功"
 }
 
 # 更新clash
 update() {
     version=$1
     if [ ! -f "${clash_path}" ]; then
-        echo "Clash not installed"
+        echo "未安装 Clash"
     else
         install_clash "$version"
         # 重启
         autorestart ''
-        echo "Successfully updated Clash"
+        echo "已成功更新 Clash"
     fi
 }
 
@@ -497,7 +497,7 @@ update() {
 start() {
     # 判断是否正在运行
     if $state; then
-        echo "Program already running"
+        echo "程序已在运行"
     else
         echo "Start loding..."
         if [ -f "${clash_path}" ]; then
@@ -509,9 +509,9 @@ start() {
             sleep 6
             # 载入配置
             reload "$1"
-            echo "Start succeeded"
+            echo "启动成功"
         else
-            echo "Clash Program path not installed or specified"
+            echo "未安装Clash"
         fi
     fi
 }
@@ -522,9 +522,9 @@ stop() {
     if ${state}; then
         # 根据clash PID 结束Clash
         kill -9 "${pid}"
-        echo "Stop succeeded"
+        echo "停止成功"
     else
-        echo "not running"
+        echo "程序未运行"
     fi
 }
 
@@ -538,7 +538,7 @@ restart() {
 reload() {
     use=$1
     if ! $state; then
-        echo "Clash not running"
+        echo "程序未运行"
         exit 1
     fi
 
@@ -546,13 +546,13 @@ reload() {
         use=$(get_subscribe_config '' 'use')
     elif ! existence_subscrib_config "${use}"; then
         # 不存在该订阅配置
-        echo "The subscription could not be found"
+        echo "找不到该订阅"
         exit 1
     fi
 
     if [ "$use" = 'default' ]; then
         # 使用默认配置
-        echo "Use default configuration"
+        echo "使用默认配置"
         cp ${config_path} ${config_catalog}/temp_config.yaml
     else
         # 把自定义文件覆写到下载的配置文件中生成临时配置文件
@@ -569,7 +569,7 @@ reload() {
 
     # 修改启用配置文件名
     set_subscribe_config '' 'use' "${use}"
-    echo "reload succeeded"
+    echo "重载成功"
 }
 
 # 获取Clash信息
@@ -579,15 +579,15 @@ status() {
     s=$(get_subscribe_config '' 'use')
     as=$(get_clashtool_config 'autostart')
     if $state; then
-        echo "status: started"
+        echo "状态: 运行中"
     else
-        echo "status: stopped"
+        echo "状态: 未运行"
     fi
-    echo "ui：$u"
-    echo "version：$v"
-    echo "subscribe: $s"
-    echo "autoStart: $as"
-    echo "installCatalog: $clash_catalog"
+    echo "ClashUI：$u"
+    echo "Clash版本：$v"
+    echo "当前订阅文件: $s"
+    echo "开机自动启动: $as"
+    echo "Clash安装路径: $clash_catalog"
 }
 
 # 显示当所有订阅
@@ -600,8 +600,8 @@ list() {
             echo ""
             echo "      $name"
             echo "====================="
-            echo "url: $url"
-            echo "interval: $interval"
+            echo "订阅地址: $url"
+            echo "更新间隔: $interval"
             echo "====================="
         fi
     done
@@ -615,18 +615,18 @@ add() {
     interval=$(echo "${input}" | awk -F '::' '{print $3}')
     # 验证参数
     if [ -z "$name" ] || [ -z "$url" ] || [ -z "$interval" ]; then
-        echo "Invalid input string: $input"
+        echo "格式错误"
         exit 1
     fi
     if existence_subscrib_config "${name}"; then
         # 更新配置
         set_subscribe_config "${name}" 'url' "${url}"
         set_subscribe_config "${name}" 'interval' "${interval}"
-        echo "Update subscribe succeeded"
+        echo "更新订阅成功"
     else
         # 创建配置
         add_subscribe_config $name $url $interval
-        echo "Add subscribe succeeded"
+        echo "添加订阅成功"
     fi
     # 更新配置定时任务
     auto_update_sub true "${name}"
@@ -654,9 +654,9 @@ del() {
             # 重载配置
             autoreload
         fi
-        echo "Delete subscription succeeded"
+        echo "删除订阅成功"
     else
-        echo "The subscription was not found"
+        echo "不存在该订阅"
     fi
 }
 
@@ -682,9 +682,9 @@ update_sub() {
             # 更新指定订阅配置
             if existence_subscrib_config "${sub_name}"; then
                 download_sub "${sub_name}"
-                echo "update subscribe ok"
+                echo "更新订阅成功"
             else
-                echo "No such subscription"
+                echo "不存在该订阅"
             fi
         fi
     fi
@@ -701,10 +701,10 @@ download_sub() {
     if [ -f "${subscribe_config_catalog}/${name}.new.yaml" ]; then
         mv "${subscribe_config_catalog}/${name}.new.yaml" "${subscribe_config_catalog}/${name}.yaml"
     else
-        echo "Failed to download ${name}.ymal"
+        echo "下载失败"
         exit 1
     fi
-    echo "download ok"
+    echo "下载成功"
 }
 
 # 函数名称：crontab_tool
@@ -719,7 +719,7 @@ crontab_tool() {
         if crontab -l | grep -qF "$command"; then
             # 定时任务存在,删除定时任务
             crontab -l | grep -v "$command" | crontab -
-            echo "Deleted scheduled task: $command"
+            echo "已删除计划任务: $command"
         fi
     else
         # 检查定时任务是否已存在
@@ -730,14 +730,14 @@ crontab_tool() {
                 crontab -l
                 echo "0 */$interval * * * $command"
             ) | crontab -
-            echo "Updated scheduled task: Run $command every $interval hours"
+            echo "更新计划任务: 运行 $command 每隔 $interval 小时"
         else
             # 定时任务不存在，执行添加操作
             (
                 crontab -l
                 echo "0 */$interval * * * $command"
             ) | crontab -
-            echo "Added scheduled task: Run $command every $interval hours"
+            echo "添加计划任务: 运行 $command 每隔 $interval 小时"
         fi
     fi
 }
@@ -749,7 +749,7 @@ auto_update_sub() {
     sub_name=$2
     # 判断是否存在订阅配置
     if [ -n "$sub_name" ] && existence_subscrib_config "$sub_name"; then
-        echo "There is no subscription configuration for $sub_name "
+        echo "没有该订阅配置"
     fi
     if [ -z "$sub_name" ]; then
         # 为空则根据配置和enable重新设置全部定时任务
@@ -808,7 +808,7 @@ auto_start() {
             rm "/etc/init.d/$service_name"
         fi
 
-        echo "Successfully set startup and running scripts"
+        echo "成功设置启动和运行脚本"
     elif [ -f /etc/arch-release ]; then
         # Arch Linux
         service_name="myscript"
@@ -869,37 +869,35 @@ auto_start() {
             sed -i "\|^$script|d" "$rc_local_file"
         fi
     else
-        echo "Unsupported Linux distribution"
+        echo "不支持的Linux发行版"
         exit 1
     fi
     set_clashtool_config 'autostart' "${enable}"
     if ${enable}; then
-        echo 'Successfully enabled automatic start'
+        echo '自动启动已开启'
     else
-        echo 'Successfully turned off automatic start'
+        echo '自动启动已关闭'
     fi
 }
 
 # 说明
-
 hepl() {
-echo " Command                Parameters                            Remarks"
-echo "install        version            Optional       Install Clash, default is the latest version"
-echo "uninstall      all                Optional       Uninstall Clash, with 'all' parameter deletes related configurations"
-echo "update         version            Optional       Update Clash, default is the latest version"
-echo "install_ui     dashboard or yacd  Optional       Install web interface, default is dashboard"
-echo "start          Subscription Name                 Start Clash, by default uses the current subscription configuration"
-echo "stop            -                                Stop Clash from running"
-echo "restart        Subscription Name  Optional       Restart Clash, by default uses the current subscription configuration"
-echo "reload         Subscription Name  Optional       Reload Clash, by default uses the current subscription configuration"
-echo "add            Subscription                      Info Add subscription info: Format '<Subscription Name::Subscription URL::Subscription Update Interval (hours)>'"
-echo "del            Subscription Name                 Delete subscription"
-echo "update_sub     Subscription Name  Optional       Update subscription files, by default updates all subscription files"
-echo "list           -                                 Query all subscription information"
-echo "auto_start     true or false      Optional       Enable or disable auto-start on boot, default is true"
-echo "status         -                                 View Clash status information"
+    echo "   命令                          参数                           备注"
+    echo "install                 版本             可选         安装Clash,默认为最新版本"
+    echo "uninstall               all              可选         卸载Clash,参数为all时同时删除相关配置"
+    echo "update                  版本             可选         更新Clash,默认为最新版本"
+    echo "install_ui              dashboard或yacd  可选         安装web界面,默认安装dashboard"
+    echo "start                   订阅名称                     启动Clash，默认使用当前订阅配置"
+    echo "stop                    空                           停止Clash运行"
+    echo "restart                 订阅名称        可选          重载Clash，默认使用当前订阅配置"
+    echo "reload                  订阅名称        可选          重启Clash，默认使用当前订阅配置"
+    echo "add                     订阅信息                     添加订阅信息：格式《订阅名称::订阅地址::订阅更新时间（小时）》"
+    echo "del                     订阅名称                     删除订阅"
+    echo "update_sub              订阅名称                     更新订阅文件，默认更新所有订阅文件"
+    echo "list                    空                           查询所有订阅信息"
+    echo "auto_start              true或false    可选          启用或禁用开机自启动功能，默认为true"
+    echo "status                  空                           查看Clash状态信息"
 }
-
 main() {
     fun=$1
     var=$2
@@ -942,9 +940,6 @@ main() {
         ;;
     "auto_start")
         auto_start "${var}"
-        ;;
-    "auto_update_sub")
-        auto_update_sub "${var}"
         ;;
     "status")
         status

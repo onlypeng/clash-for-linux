@@ -35,33 +35,6 @@ if [ -z "$pid" ]; then
 else
     state=true
 fi
-# 获取当前操作系统架构
-get_platform() {
-    # 使用 uname -m 命令获取当前操作系统的机器硬件名称
-    if [ -z "${platform}" ]; then
-        machine_arch=$(uname -m)
-
-        # 检查架构类型并输出相应的信息
-        case $machine_arch in
-        x86_64 | amd64)
-            echo "amd64"
-            ;;
-        aarch64 | arm64)
-            echo "arm64"
-            ;;
-        i*86 | x86)
-            echo "386"
-            ;;
-        arm*)
-            echo "${machine_arch}"
-            ;;
-        *)
-            echo "Unable to determine the architecture type of the current operating system. Please fill in the configuration yourself"
-            exit 1
-            ;;
-        esac
-    fi
-}
 
 # 验证true false ''默认为true
 verify() {
@@ -383,8 +356,30 @@ install_clash() {
         echo "No update required"
         exit 0
     fi
-    # 获取系统架构
-    platform=$(get_platform)
+    # 使用 uname -m 命令获取当前操作系统的架构
+    if [ -z "${platform}" ]; then
+        machine_arch=$(uname -m)
+
+        # 检查架构类型并输出相应的信息
+        case $machine_arch in
+        x86_64 | amd64)
+            platform="amd64"
+            ;;
+        aarch64 | arm64)
+            platform="arm64"
+            ;;
+        i*86 | x86)
+            platform="386"
+            ;;
+        arm*)
+            platform="${machine_arch}"
+            ;;
+        *)
+            echo "Unable to determine the architecture type of the current operating system. Please fill in the configuration yourself"
+            exit 1
+            ;;
+        esac
+    fi
     # 下载clash
     wget -O "${clash_catalog}/${platform}-${version}.gz" "https://gh.ylpproxy.eu.org/https://github.com/Dreamacro/clash/releases/download/${version}/clash-linux-${platform}-${version}.gz"
     # 下载成功则安装clash

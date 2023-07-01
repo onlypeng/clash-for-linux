@@ -5,11 +5,10 @@ secret='12123'
 # clash平台，默认自动获取，获取失败请自行填写
 platform=''
 
+# 当前脚本路径
+script_path=$(readlink -f "$0")
 # 当前脚本目录
-tool_catalog=$(
-    cd "$(dirname "$0")" || exit 1
-    pwd
-)
+tool_catalog=$(dirname "$script_path")
 # clash 安装目录
 clash_catalog="$tool_catalog/clash"
 # clash 配置目录
@@ -755,7 +754,7 @@ auto_update_sub() {
                 if ! $enable; then
                     interval=0
                 fi
-                crontab_tool "$interval" "${tool_catalog}/clashtool.sh update_sub ${name} >> ${logs_catalog}/crontab.log 2>&1"
+                crontab_tool "$interval" "$script_path update_sub ${name} >> ${logs_catalog}/crontab.log 2>&1"
             fi
         done
     else
@@ -763,117 +762,137 @@ auto_update_sub() {
         if ! $enable; then
             interval=0
         fi
-        crontab_tool "$interval" "${tool_catalog}/clashtool.sh update_sub ${sub_name} >> ${logs_catalog}/crontab.log 2>&1"
+        crontab_tool "$interval" "$script_path update_sub ${sub_name} >> ${logs_catalog}/crontab.log 2>&1"
     fi
 }
 
 # 函数：设置开机运行脚本 （由于各linux系统环境差异原因可能会无效）
 # 参数: 是否启用开机运行 （可选），默认为 true（true/false）
 auto_start() {
-    script="${tool_catalog}/clashtool.sh start"
+    # 开机运行的脚本
+    script="$script_path start"
+    # 是否开机运行
     enable=${1:-true}
     verify "$enable"
+    
     # 判断 Linux 发行版
     if [ -f /etc/lsb-release ] || [ -f /etc/debian_version ]; then
         # Ubuntu 或 Debian
         service_name="myscript"
-
+    
         # 启用或禁用开机运行
         if $enable; then
-            # 创建服务脚本文件
-            {
-                echo "#!/bin/bash"
-                echo "### BEGIN INIT INFO"
-                echo "# Provides:          $service_name"
-                echo "# Required-Start:    \$remote_fs \$syslog"
-                echo "# Required-Stop:     \$remote_fs \$syslog"
-                echo "# Default-Start:     2 3 4 5"
-                echo "# Default-Stop:      0 1 6"
-                echo "# Short-Description: My Startup Script"
-                echo "# Description:       My Startup Script"
-                echo "### END INIT INFO"
-                echo ""
-                echo "$script"
-            } >>"/etc/init.d/$service_name"
-            chmod +x "/etc/init.d/$service_name"
-            update-rc.d "$service_name" defaults
+            # 检查脚本是否已存在
+            if ! grep -qF "$script" "/etc/init.d/$service_name"; then
+                # 创建服务脚本文件
+                {
+                    echo "#!/bin/bash"
+                    echo "### BEGIN INIT INFO"
+                    echo "# Provides:          $service_name"
+                    echo "# Required-Start:    \$remote_fs \$syslog"
+                    echo "# Required-Stop:     \$remote_fs \$syslog"
+                    echo "# Default-Start:     2 3 4 5"
+                    echo "# Default-Stop:      0 1 6"
+                    echo "# Short-Description: My Startup Script"
+                    echo "# Description:       My Startup Script"
+                    echo "### END INIT INFO"
+                    echo ""
+                    echo "$script"
+                } >>"/etc/init.d/$service_name"
+                chmod +x "/etc/init.d/$service_name"
+                update-rc.d "$service_name" defaults >/dev/null 2>&1
+            fi
         else
             # 禁用开机运行
-            update-rc.d -f "$service_name" remove
-            rm "/etc/init.d/$service_name"
+            if [ -f "/etc/init.d/$service_name" ]; then
+                update-rc.d -f "$service_name" remove >/dev/null 2>&1
+                rm "/etc/init.d/$service_name"
+            fi
         fi
-
-        echo "成功设置启动和运行脚本"
     elif [ -f /etc/arch-release ]; then
         # Arch Linux
         service_name="myscript"
-
+    
         # 启用或禁用开机运行
         if $enable; then
-            # 添加 systemd 服务
-            {
-                echo "[Unit]"
-                echo "Description=My Startup Script"
-                echo ""
-                echo "[Service]"
-                echo "ExecStart=$script"
-                echo "Type=simple"
-                echo ""
-                echo "[Install]"
-                echo "WantedBy=default.target"
-            } >>"/etc/systemd/system/$service_name.service"
-            systemctl enable "$service_name.service"
+            # 检查脚本是否已存在
+            if ! grep -qF "$script" "/etc/systemd/system/$service_name.service"; then
+                # 添加 systemd 服务
+                {
+                    echo "[Unit]"
+                    echo "Description=My Startup Script"
+                    echo ""
+                    echo "[Service]"
+                    echo "ExecStart=$script"
+                    echo "Type=simple"
+                    echo ""
+                    echo "[Install]"
+                    echo "WantedBy=default.target"
+                } >>"/etc/systemd/system/$service_name.service"
+                systemctl enable "$service_name.service" >/dev/null 2>&1
+            fi
         else
             # 禁用开机运行
-            systemctl disable "$service_name.service"
-            rm "/etc/systemd/system/$service_name.service"
-            systemctl daemon-reload
+            if [ -f "/etc/systemd/system/$service_name.service" ]; then
+                systemctl disable "$service_name.service" >/dev/null 2>&1
+                rm "/etc/systemd/system/$service_name.service"
+                systemctl daemon-reload >/dev/null 2>&1
+            fi
         fi
     elif [ -f /etc/alpine-release ]; then
         # Alpine Linux
         rc_local_file="/etc/local.d/startup.start"
-
+    
         # 启用或禁用开机运行
         if $enable; then
-            # 创建开机启动脚本
-            echo "$script" >>"$rc_local_file"
-            chmod +x "$rc_local_file"
+            # 检查脚本是否已存在
+            if ! grep -qF "$script" "$rc_local_file"; then
+                # 创建开机启动脚本
+                echo "$script" >>"$rc_local_file"
+                chmod +x "$rc_local_file"
+            fi
         else
             # 禁用开机运行
-            sed -i "\|^$script|d" "$rc_local_file"
+            if [ -f "$rc_local_file" ]; then
+                sed -i "\|^$script|d" "$rc_local_file"
+            fi
         fi
-
-        # 检查 服务是否已添加
+    
+        # 检查服务是否已添加
         if ! rc-status | grep -qw "local"; then
-            # 添加 服务到开机启动
-            rc-update add default
+            # 添加服务到开机启动
+            rc-update add local default >/dev/null 2>&1
         fi
     elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ]; then
         # CentOS
         rc_local_file="/etc/rc.d/rc.local"
-
+    
         # 启用或禁用开机运行
         if $enable; then
-            # 判断脚本是否已添加到 rc.local
+            # 检查脚本是否已存在
             if ! grep -qF "$script" "$rc_local_file"; then
                 # 将脚本添加到 rc.local
                 echo "$script" | tee -a "$rc_local_file" >/dev/null
             fi
         else
             # 禁用开机运行
-            sed -i "\|^$script|d" "$rc_local_file"
+            if [ -f "$rc_local_file" ]; then
+                sed -i "\|^$script|d" "$rc_local_file"
+            fi
         fi
     else
-        echo "不支持的Linux发行版"
-        exit 1
+        echo '不支持的Linux发行版'
     fi
+    
     set_clashtool_config 'autostart' "${enable}"
+    
     if ${enable}; then
         echo '自动启动已开启'
     else
         echo '自动启动已关闭'
     fi
 }
+
 
 # 说明
 hepl() {

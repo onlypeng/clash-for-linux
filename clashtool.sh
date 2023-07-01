@@ -5,13 +5,12 @@ secret='12123'
 # clash平台，为空则自动获取，获取失败请自行填写
 platform=''
 
+# 当前脚本路径
+script_path=$(readlink -f "$0")
 # 当前脚本目录
-tool_catalog=$(
-    cd "$(dirname "$0")" || exit 1
-    pwd
-)
+tool_catalog=$(dirname "$script_path")
 # clash 安装目录
-clash_catalog="$tool_catalog/clash"
+clash_catalog="${tool_catalog}/clash"
 # clash 配置目录
 config_catalog="${clash_catalog}/config"
 # clash UI目录
@@ -755,7 +754,7 @@ auto_update_sub() {
                 if ! $enable; then
                     interval=0
                 fi
-                crontab_tool "$interval" "${tool_catalog}/clashtool.sh update_sub ${name} >> ${logs_catalog}/crontab.log 2>&1"
+                crontab_tool "$interval" "$script_path update_sub ${name} >> ${logs_catalog}/crontab.log 2>&1"
             fi
         done
     else
@@ -763,14 +762,16 @@ auto_update_sub() {
         if ! $enable; then
             interval=0
         fi
-        crontab_tool "$interval" "${tool_catalog}/clashtool.sh update_sub ${sub_name} >> ${logs_catalog}/crontab.log 2>&1"
+        crontab_tool "$interval" "$script_path update_sub ${sub_name} >> ${logs_catalog}/crontab.log 2>&1"
     fi
 }
 
 # 函数：设置开机运行脚本 （由于各linux系统环境差异原因可能会无效）
 # 参数: 是否启用开机运行 （可选），默认为 true（true/false）
 auto_start() {
-    script="${tool_catalog}/clashtool.sh start"
+    # 开机运行的脚本
+    script="$script_path start"
+    # 是否开机运行
     enable=${1:-true}
     verify "$enable"
     # 判断 Linux 发行版
@@ -846,7 +847,7 @@ auto_start() {
         # 检查 服务是否已添加
         if ! rc-status | grep -qw "local"; then
             # 添加 服务到开机启动
-            rc-update add default
+            rc-update add local default
         fi
     elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ]; then
         # CentOS

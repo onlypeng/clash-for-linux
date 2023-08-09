@@ -21,4 +21,8 @@ clash相关信息获取位置，例：https://github.com/Dreamacro/clash/release
 使用Clash核心的项目地址：https://github.com/Dreamacro/clash/releases<br>
 使用ClashUI的项目地址：<br>
 &nbsp;&nbsp;&nbsp;&nbsp;yacd：https://github.com/haishanh/yacd/tree/gh-pages<br>
-&nbsp;&nbsp;&nbsp;&nbsp;dashboard：https://github.com/Dreamacro/clash-dashboard/tree/gh-pages
+&nbsp;&nbsp;&nbsp;&nbsp;dashboard：https://github.com/Dreamacro/clash-dashboard/tree/gh-pages<br>
+<br>
+配合这些软件食用效果更佳
+    浏览器插件：SwitchyOmega
+    Windows代理软件:ProxifierPE

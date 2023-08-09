@@ -47,6 +47,8 @@ verify_failed_msg="Parameter can only be true, false, or '' (default is true)"
 require_curl_failed_msg="Unrecognized package manager, please install the curl software manually"
 init_config_start_msg="Initializing configuration file"
 init_config_success_msg="Configuration file initialized successfully"
+download_file_path_null_msg="Download path cannot be empty"
+download_url_null_msg="Download URL address cannot be empty"
 download_start_msg="Starting download"
 download_success_msg="Download successful"
 download_failed_msg="Download failed"
@@ -123,6 +125,8 @@ chinese_language(){
     require_curl_failed_msg="无法识别包管理器，请自行安装curl软件"
     init_config_start_msg="初始化配置文件"
     init_config_success_msg="配置文件初始化成功"
+    download_file_path_null_msg="下载路径不能为空"
+    download_url_null_msg="下载url地址不能为空"
     download_start_msg="开始下载"
     download_success_msg="下载成功"
     download_failed_msg="下载失败"
@@ -467,6 +471,14 @@ download(){
     tag=$3
     # 是否使用github代理
     enable=${4:-true}
+    if [ -z "$file_path" ];then
+        failed "$download_file_path_null_msg"
+    fi
+
+    if [ -z "$url" ];then
+        failed "$download_url_null_msg"
+    fi
+
     echo "${download_start_msg}${tag}"
     # 临时关闭本机代理
     _proxy=$(get_clashtool_config "proxy")
@@ -663,21 +675,26 @@ uninstall() {
 # 更新clash
 update() {
     version=$1
-    if [ ! -f "${clash_path}" ]; then
-        failed "$not_install_clash_msg"
-    else
+    if [ -f "${clash_path}" ]; then
         install_clash "$version"
+    else
+        failed "$not_install_clash_msg"
     fi
 }
 
 # 处理Clash配置文件
 processing_config(){
     use=$1
-    if [ -z "${use}" ]; then
-            use=$(get_subscribe_config '' 'use')
+    if [ -z "$use" ]; then
+        use=$(get_subscribe_config '' 'use')
     elif ! existence_subscrib_config "${use}"; then
         # 不存在该订阅配置
         failed "$not_sub_exists_msg"
+    fi
+
+    # 文件不存在则更新订阅
+    if [ ! -f "${subscribe_config_catalog}/${use}.yaml" ];then
+        update_sub "$use"
     fi
 
     if [ "$use" = 'default' ]; then
@@ -699,8 +716,8 @@ start() {
     use=$1
     # 判断是否正在运行
     if [ -n "$pid" ]; then
-        warn "$clash_running_warn_msg
-    else"
+        warn "$clash_running_warn_msg"
+    else
         if [ -f "${clash_path}" ]; then
             processing_config "$use"
             echo "$clash_start_msg"

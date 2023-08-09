@@ -1,19 +1,24 @@
-自定义参数 <br>
-&nbsp;&nbsp;&nbsp;&nbsp;\# UI链接密码 <br>
-&nbsp;&nbsp;&nbsp;&nbsp;secret 默认12123 <br>
-&nbsp;&nbsp;&nbsp;&nbsp;\# clash架构 <br>
-&nbsp;&nbsp;&nbsp;&nbsp;platform 根据系统自动获取，获取失败可自行指定 <br>
+脚本可自定义编辑参数
+&nbsp;&nbsp;&nbsp;&nbsp;\# 网页初始链接密码，不填写则随机生成
+&nbsp;&nbsp;&nbsp;&nbsp;secret=''
+&nbsp;&nbsp;&nbsp;&nbsp;\# clash架构，默认自动获取，获取失败请自行填写
+&nbsp;&nbsp;&nbsp;&nbsp;platform=''
+&nbsp;&nbsp;&nbsp;&nbsp;\# 使用中文提示输出语言
+&nbsp;&nbsp;&nbsp;&nbsp;chinese=true
+&nbsp;&nbsp;&nbsp;&nbsp;\# 订阅使用github代理下载
+&nbsp;&nbsp;&nbsp;&nbsp;sub_proxy=false
+&nbsp;&nbsp;&nbsp;&nbsp;\# github下载代理地址
+&nbsp;&nbsp;&nbsp;&nbsp;github_proxy="https://gh.ylpproxy.eu.org/"
 
-clash信息获取地址：https://github.com/Dreamacro/clash/releases中clash-darwin-amd64-v1.16.0.gz<br>
+clash相关信息获取位置，例：https://github.com/Dreamacro/clash/releases 中的 clash-darwin-amd64-v1.16.0.gz<br>
 &nbsp;&nbsp;&nbsp;&nbsp;版本 例如：v1.16.0<br>
 &nbsp;&nbsp;&nbsp;&nbsp;架构 例如：darwin-amd64<br>
 
-用户更改clash配置文件/clashtool下载地址/clash/config/config.yaml ，该配置文件数据会自动覆盖订阅文件数据 <br>
+用户更改clash用户配置文件《位置：/clashtool地址/clash/config/user.yaml ，该配置文件中数据会自动覆盖订阅文件数据，仅支持单行数据，不支持复杂数组等数据 
 
-ClasUI默认地址http://ip:9090/ui <br>
+详细命令可运行 ./clashtool help 查看 
 
-详细信息可运行 ./clashtool help 查看 <br>
-安装Clash的项目：https://github.com/Dreamacro/clash/releases<br>
-安装ClashUI的项目：<br>
+使用Clash核心的项目地址：https://github.com/Dreamacro/clash/releases<br>
+使用ClashUI的项目地址：
 &nbsp;&nbsp;&nbsp;&nbsp;yacd：https://github.com/haishanh/yacd/tree/gh-pages<br>
 &nbsp;&nbsp;&nbsp;&nbsp;dashboard：https://github.com/Dreamacro/clash-dashboard/tree/gh-pages

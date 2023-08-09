@@ -8,7 +8,7 @@ platform=''
 chinese=true
 # 订阅使用github代理下载
 sub_proxy=false
-# github下载代理地址
+# github下载代理地址，clash核心和ui的下载使用该代理
 github_proxy="https://gh.ylpproxy.eu.org/"
 
 # 当前脚本路径
@@ -23,7 +23,7 @@ config_catalog="${clash_catalog}/config"
 clash_gh_pages_catalog="${clash_catalog}/clash_gh_pages"
 # clash 日志目录
 logs_catalog="${clash_catalog}/logs"
-# 订阅配置目录
+# 订阅文件目录
 subscribe_config_catalog="${config_catalog}/subscribe"
 
 # clash文件
@@ -390,7 +390,6 @@ require() {
 
     # 检查并安装curl
     if ! command -v curl >/dev/null 2>&1; then
-        echo "安装 curl..."
         if command -v apt >/dev/null 2>&1; then
             apt install -y curl
         elif command -v yum >/dev/null 2>&1; then
@@ -398,14 +397,14 @@ require() {
         elif command -v apk >/dev/null 2>&1; then
             apk add --update curl
         else
-            failed $require_curl_failed_msg
+            failed "$require_curl_failed_msg"
         fi
     fi
 }
 
 # 初始化配置
 init() {
-    echo $init_config_start_msg
+    echo "$init_config_start_msg"
     # 创建clash目录
     if [ ! -d "${clash_catalog}" ]; then
         mkdir -p "${clash_catalog}"
@@ -441,7 +440,7 @@ init() {
     if [ ! -f "${user_config_path}" ]; then
         # 未自定义网页密码则产生随机密码
         if [ -z "$secret" ];then
-            secret=$(cat /dev/urandom 2>/dev/null | tr -dc a-zA-Z0-9#@ 2>/dev/null | head -c 12)
+            secret=$(tr -dc a-zA-Z0-9#@ 2>/dev/null < /dev/urandom | head -c 12)
         fi
         {
             echo "port: 7890"
@@ -455,7 +454,7 @@ init() {
         } >> "${user_config_path}"
     fi
 
-    success $init_config_success_msg
+    success "$init_config_success_msg"
 }
 
 # 下载通用脚本
@@ -468,9 +467,8 @@ download(){
     tag=$3
     # 是否使用github代理
     enable=${4:-true}
-    # 临时关闭本机代理
     echo "${download_start_msg}${tag}"
-
+    # 临时关闭本机代理
     _proxy=$(get_clashtool_config "proxy")
     if [ "$_proxy" = "true" ];then
         proxy_off
@@ -525,7 +523,7 @@ install_clash() {
         # 获取clash最新版本号
         version=$(curl -k -s https://api.github.com/repos/Dreamacro/clash/releases/latest | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':' '{print $2}')
         if [ -z "${version}" ]; then
-            failed $get_version_failed_msg
+            failed "$get_version_failed_msg"
         fi
     fi
     # 获取配置中当前安装的版本
@@ -538,7 +536,7 @@ install_clash() {
     echo "${install_version_msg}${version}"
     # 判断版本是否相等
     if [ "${current}" = "${version}" ]; then
-        warn $equal_versions_warn_msg
+        warn "$equal_versions_warn_msg"
     fi
     # 使用 uname -m 命令获取当前操作系统的架构
     if [ -z "${platform}" ]; then
@@ -558,7 +556,7 @@ install_clash() {
             platform="${machine_arch}"
             ;;
         *)
-            failed $recognition_system_failed_msg
+            failed "$recognition_system_failed_msg"
             ;;
         esac
     fi
@@ -569,9 +567,9 @@ install_clash() {
     autostop
     if [ -f "$clash_path" ];then
         # 卸载已安装Clash
-        success $delete_clash_success_msg
+        success "$delete_clash_success_msg"
     fi
-    echo $install_clash_start_msg
+    echo "$install_clash_start_msg"
     # 解压clash
     gunzip -f "${clash_temp_path}.gz"
     # 重命名clash
@@ -581,7 +579,7 @@ install_clash() {
     # 向clash配置文件写入当前版本
     set_clashtool_config 'version' "${version}"
     # 启动clash
-    success $install_clash_success_msg
+    success "$install_clash_success_msg"
     autostart ""
 }
 
@@ -608,7 +606,7 @@ install_ui() {
     download "${clash_catalog}/gh-pages.zip" "$url" "${ui}"
     # 删除当前已安装UI
     if [ -d "${clash_gh_pages_catalog}" ]; then
-        echo $delete_ui_success_msg
+        echo "$delete_ui_success_msg"
         rm -rf "${clash_gh_pages_catalog}"
     fi
     echo "${install_ui_start_msg}"
@@ -618,14 +616,14 @@ install_ui() {
     mv "${clash_catalog}/${ui_name}" "${clash_gh_pages_catalog}"
     # 删除已下载文件
     rm "${clash_catalog}/gh-pages.zip"
-    success $install_ui_success_msg
+    success "$install_ui_success_msg"
 }
 
 # 安装clash
 install() {
     # 判断是否已经安装clash
     if [ -f "${clash_path}" ]; then
-        warn $clash_installed_msg
+        warn "$clash_installed_msg"
     else
         # 安装依赖软件
         require
@@ -657,14 +655,14 @@ uninstall() {
             rm -rf "${clash_path}"
         fi
     fi
-    success $uninstall_clash_success_msg
+    success "$uninstall_clash_success_msg"
 }
 
 # 更新clash
 update() {
     version=$1
     if [ ! -f "${clash_path}" ]; then
-        failed $not_install_clash_msg
+        failed "$not_install_clash_msg"
     else
         install_clash "$version"
     fi
@@ -677,7 +675,7 @@ processing_config(){
             use=$(get_subscribe_config '' 'use')
     elif ! existence_subscrib_config "${use}"; then
         # 不存在该订阅配置
-        failed $not_sub_exists_msg
+        failed "$not_sub_exists_msg"
     fi
 
     if [ "$use" = 'default' ]; then
@@ -699,11 +697,11 @@ start() {
     use=$1
     # 判断是否正在运行
     if [ -n "$pid" ]; then
-        warn $clash_running_warn_msg
-    else
+        warn "$clash_running_warn_msg
+    else"
         if [ -f "${clash_path}" ]; then
             processing_config "$use"
-            echo $clash_start_msg
+            echo "$clash_start_msg"
             # 启动clash
             nohup "${clash_path}" -d "${config_catalog}" > "${logs_catalog}/clash.log" 2>&1 &
             # 等待2秒时间输出日志
@@ -711,14 +709,14 @@ start() {
             # 根据输出日志判断是否启动失败
             result=$(awk -v search="level=fatal" -F 'msg=' '/level=fatal/ && $0 ~ search {gsub(/"/, "", $2); print $2; found=1} END{if (found != 1) exit 1}' "${logs_catalog}/clash.log")
             if [ -n "$result" ];then
-                echo "错误信息：$result"
-                failed $clash_yaml_failed_msg
+                echo "$result"
+                failed "$clash_yaml_failed_msg"
             fi
 
             pid=$(pgrep -f "$clash_path")
             # 进一步判断是否启动失败
-            if [ -z $pid ];then
-                failed $clash_start_failed_msg
+            if [ -z "$pid" ];then
+                failed "$clash_start_failed_msg"
             fi
             set_subscribe_config '' 'use' "${use}"
             # 判断是否需要开启本地代理
@@ -731,11 +729,11 @@ start() {
             # 显示提示信息
             port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
             secret=$(get_yaml_value "secret" "${config_path}")
-            success $clash_start_success_msg
+            success "$clash_start_success_msg"
             echo "${clash_ui_access_address_msg}http://<ip>:$port/ui"
             echo "${clash_ui_access_secret_msg}${secret}"
         else
-            failed $not_install_clash_msg
+            failed "$not_install_clash_msg"
         fi
     fi
 }
@@ -752,9 +750,9 @@ stop() {
         if [ "$_proxy" = "true" ];then
             proxy_off
         fi
-        success $clash_stop_success_msg
+        success "$clash_stop_success_msg"
     else
-        warn $clash_not_running_warn_msg false
+        warn "$clash_not_running_warn_msg" false
     fi
 }
 
@@ -768,7 +766,7 @@ restart() {
 reload() {
     use=$1
     if ! $state; then
-        warn $clash_not_running_warn_msg
+        warn "$clash_not_running_warn_msg"
     fi
     processing_config "$use"
     port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
@@ -780,12 +778,12 @@ reload() {
         result=$(curl -s -X PUT "http://127.0.0.1:${port}/configs" -H "Content-Type: application/json" -H "Authorization: Bearer ${secret}" -d "{\"path\": \"${config_path}\"}")
     fi
     if [ -n "$result" ];then
-        echo "错误信息：$(echo "$result" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')"
-        failed $clash_yaml_failed_msg
+        echo "$result" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p'
+        failed "$clash_yaml_failed_msg"
     fi
     # 修改启用配置文件名
     set_subscribe_config '' 'use' "${use}"
-    success $clash_reload_success_msg
+    success "$clash_reload_success_msg"
 }
 
 # 获取Clash信息
@@ -796,9 +794,9 @@ status() {
     _secret=$(get_yaml_value 'secret' "$config_path")
     _autostart=$(get_clashtool_config 'autostart')
     if $state; then
-        echo $status_running_msg
+        echo "$status_running_msg"
     else
-        echo $status_not_running_msg
+        echo "$status_not_running_msg"
     fi
     echo "${status_ui_msg}${_ui}"
     echo "${status_clash_version_msg}${_version}"
@@ -833,17 +831,17 @@ add() {
     interval=$(echo "${input}" | awk -F '::' '{print $3}')
     # 验证参数
     if [ -z "$name" ] || [ -z "$url" ] || [ -z "$interval" ]; then
-        failed $add_sub_parameter_failed_msg
+        failed "$add_sub_parameter_failed_msg"
     fi
     if existence_subscrib_config "${name}"; then
         # 更新配置
         set_subscribe_config "${name}" 'url' "${url}"
         set_subscribe_config "${name}" 'interval' "${interval}"
-        success $update_sub_success_msg
+        success "$update_sub_success_msg"
     else
         # 创建配置
         add_subscribe_config "$name" "$url" "$interval"
-        success $add_sub_success_msg
+        success "$add_sub_success_msg"
     fi
     # 更新配置定时任务
     auto_update_sub true "${name}"
@@ -871,9 +869,9 @@ del() {
             # 重载配置
             autoreload
         fi
-        success $delete_sub_success_msg
+        success "$delete_sub_success_msg"
     else
-        failed $not_sub_exists_msg
+        failed "$not_sub_exists_msg"
     fi
 }
 
@@ -895,7 +893,7 @@ update_sub() {
         # 更新当前使用配置
         if [ -z "${sub_name}" ]; then
             if [ "$use" = "default" ];then
-                warn $update_default_sub_failed_msg
+                warn "$update_default_sub_failed_msg"
             fi
             download_sub "${use}"
         else
@@ -903,11 +901,11 @@ update_sub() {
             if existence_subscrib_config "${sub_name}"; then
                 download_sub "${sub_name}"
             else
-                failed $not_sub_exists_msg
+                failed "$not_sub_exists_msg"
             fi
         fi
     fi
-    success $update_sub_success_msg
+    success "$update_sub_success_msg"
     # 重载配置文件
     autoreload "$use"
 }
@@ -960,7 +958,7 @@ auto_update_sub() {
     sub_name=$2
     # 判断是否存在订阅配置
     if [ -n "$sub_name" ] && ! existence_subscrib_config "$sub_name"; then
-        failed $not_sub_exists_msg
+        failed "$not_sub_exists_msg"
     fi
     if [ -z "$sub_name" ]; then
         # 为空则根据配置和enable重新设置全部定时任务
@@ -1098,15 +1096,15 @@ auto_start() {
             fi
         fi
     else
-        failed $unsupported_linux_distribution_failed_msg
+        failed "$unsupported_linux_distribution_failed_msg"
     fi
     
     set_clashtool_config 'autostart' "${enable}"
     
     if ${enable}; then
-        success $auto_start_enabled_success_msg
+        success "$auto_start_enabled_success_msg"
     else
-        success $auto_start_turned_off_success_msg
+        success "$auto_start_turned_off_success_msg"
     fi
 }
 
@@ -1116,7 +1114,7 @@ proxy(){
     verify "$enable"
     if $enable ;then
         if [ $state = "false" ];then
-            failed $clash_not_running_warn_msg
+            failed "$clash_not_running_warn_msg"
         fi
         proxy_on
     else
@@ -1134,7 +1132,7 @@ proxy_on() {
     export HTTPS_PROXY="http://127.0.0.1:$port"
 	export no_proxy=127.0.0.1,localhost
  	export NO_PROXY=127.0.0.1,localhost
-	success $proxy_enabled_success_msg
+	success "$proxy_enabled_success_msg"
 }
 
 # 关闭系统代理
@@ -1145,7 +1143,7 @@ proxy_off(){
 	unset HTTPS_PROXY
 	unset no_proxy
 	unset NO_PROXY
-	success $proxy_off_success_msg
+	success "$proxy_off_success_msg"
 }
 
 # 主函数

@@ -653,6 +653,8 @@ uninstall() {
         else
             # 删除clash程序文件
             rm -rf "${clash_path}"
+            # 修Clash改版本为空
+            set_clashtool_config 'version' ''
         fi
     fi
     success "$uninstall_clash_success_msg"

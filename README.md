@@ -23,6 +23,6 @@ clash相关信息获取位置，例：https://github.com/Dreamacro/clash/release
 &nbsp;&nbsp;&nbsp;&nbsp;yacd：https://github.com/haishanh/yacd/tree/gh-pages<br>
 &nbsp;&nbsp;&nbsp;&nbsp;dashboard：https://github.com/Dreamacro/clash-dashboard/tree/gh-pages<br>
 <br>
-配合这些软件食用效果更佳
-    浏览器插件：SwitchyOmega
-    Windows代理软件:ProxifierPE
+配合这些软件食用效果更佳<br>
+&nbsp;&nbsp;&nbsp;&nbsp;浏览器插件：SwitchyOmega<br>
+&nbsp;&nbsp;&nbsp;&nbsp;Windows代理软件:ProxifierPE<br>

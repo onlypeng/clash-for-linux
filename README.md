@@ -14,7 +14,7 @@ clash相关信息获取位置，例：https://github.com/Dreamacro/clash/release
 &nbsp;&nbsp;&nbsp;&nbsp;版本 例如：v1.16.0<br>
 &nbsp;&nbsp;&nbsp;&nbsp;架构 例如：darwin-amd64<br>
 <br>
-用户更改clash用户配置文件《位置：/clashtool地址/clash/config/user.yaml ，该配置文件中数据会自动覆盖订阅文件数据，仅支持单行数据，不支持复杂数组等数据<br>
+用户更改clash用户配置文件《位置：/clashtool地址/clash/config/user.yaml》 ，该配置文件中数据会自动覆盖订阅文件数据，仅支持单行数据，不支持复杂数组等数据<br>
 <br>
 详细命令可运行 ./clashtool help 查看<br>
 <br>

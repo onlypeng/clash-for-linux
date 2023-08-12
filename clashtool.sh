@@ -10,30 +10,55 @@ chinese=true
 sub_proxy=false
 # github下载代理地址，clash核心和ui的下载使用该代理
 github_proxy="https://gh.ylpproxy.eu.org/"
+# 设置代理的环境变量,
+proxy_keys="http_proxy https_proxy ftp_proxy all_proxy"
+# get_scripts_path脚本存放目录
+get_scripts_dir="/tmp/clash/"
+# get_scripts_path脚本路径
+get_scripts_path="$get_scripts_dir/get_scripts_path.sh"
 
-# 当前脚本路径
-script_path=$(readlink -f "$0")
-# 当前脚本目录
-tool_catalog=$(dirname "$script_path")
+# 判断是否使用了source 命令运行脚本
+if [ "${0#-}" = "$0" ];then
+    # 使用readlink获取当前脚本路径
+    script_path="$(readlink -f "$0")"
+    # 如果不存在get_scripts_dir目录则创建
+    if [ ! -d $get_scripts_dir ];then
+        mkdir -p $get_scripts_dir
+    fi
+    # 如果不存在get_scripts_path脚本或脚本保存的路径与当前路径不一致则重新创建脚本
+    if [ ! -f "$get_scripts_path" ] || [ "$(sh $get_scripts_path)" != "$script_path" ];then
+        {
+            echo "# /bin/sh"
+            echo "echo \"$script_path\""
+        } > $get_scripts_path
+    fi
+else
+    # 使用source命令时使用get_scripts_path脚本获取脚本地址
+    script_path=$(sh $get_scripts_path)
+fi
+
 # clash 安装目录
-clash_catalog="$tool_catalog/clash"
-# clash 配置目录
-config_catalog="${clash_catalog}/config"
+clash_dir="$(dirname "$script_path")/clash"
 # clash UI目录
-clash_gh_pages_catalog="${clash_catalog}/clash_gh_pages"
+clash_ui_dir="${clash_dir}/clash_gh_pages"
 # clash 日志目录
-logs_catalog="${clash_catalog}/logs"
+logs_dir="${clash_dir}/logs"
+# clash 配置目录
+config_dir="${clash_dir}/config"
 # 订阅文件目录
-subscribe_config_catalog="${config_catalog}/subscribe"
+subscribe_dir="${config_dir}/subscribe"
 
+# 用户环境变量存放地址
+bashrc="/root/.bashrc"
 # clash文件
-clash_path="${clash_catalog}/clash"
+clash_path="${clash_dir}/clash"
 # clash配置文件
-config_path="${config_catalog}/config.yaml"
+config_path="${config_dir}/config.yaml"
+
 # 用户自定义配置
-user_config_path="${config_catalog}/user.yaml"
+user_config_path="${config_dir}/user.yaml"
 # clashtool 配置文件
-clashtool_config_path="${config_catalog}/clashtool.ini"
+clashtool_config_path="${config_dir}/clashtool.ini"
 
 # 保存当前clash程序运行状态
 pid=$(pgrep -f "$clash_path")
@@ -86,8 +111,6 @@ not_sub_exists_msg="Subscription does not exist"
 unsupported_linux_distribution_failed_msg="Unsupported Linux distribution"
 auto_start_enabled_success_msg="Auto-start enabled"
 auto_start_turned_off_success_msg="Auto-start turned off"
-proxy_enabled_success_msg="Proxy enabled"
-proxy_off_success_msg="Proxy turned off"
 status_running_msg="Status: Running"
 status_not_running_msg="Status: Not running"
 status_ui_msg="ClashUI:"
@@ -98,6 +121,13 @@ status_secret_msg="webUI link password:"
 status_clash_path_msg="Clash installation path:"
 list_sub_url_msg="Subscription URL:"
 list_sub_update_interval_msg="Update Interval:"
+proxy_port_update_msg="Detected that the Clash HTTP proxy port has been changed and the proxy is now active. Please reconfigure the proxy."
+proxy_manually_running_msg="Please run this command manually, otherwise you may not be able to access the internet."
+proxy_proxy_command_msg="Command: source $script_path proxy"
+proxy_source_command_msg="Do not use 'source' to execute commands other than 'proxy'."
+proxy_not_source_command_msg="Please use 'source' to execute the 'proxy' command."
+proxy_on_success_msg="Proxy is now enabled."
+proxy_off_success_msg="Proxy has been disabled."
 help_msg="
     Command                Parameter                           Note
     install        version             Optional     Install Clash, default is the latest version
@@ -114,8 +144,8 @@ help_msg="
     list           None                             List all subscription information
     auto_start     true or false       Optional     Enable or disable auto-start on boot, default is true
     status         None                             Display Clash-related information
-    proxy          true or false       Optional     Enable or disable local proxy, default is true"
-main_msg="Type 'help' for command information"
+    proxy          true or false       Optional     Enable or disable local proxy, default is true,This command needs to be run using source"
+main_msg="Invalid command. Enter help to view related commands"
 # 英文提示文字结束
 
 # 中文提示函数
@@ -164,8 +194,6 @@ chinese_language(){
     unsupported_linux_distribution_failed_msg="不支持的Linux发行版"
     auto_start_enabled_success_msg="自动启动已开启"
     auto_start_turned_off_success_msg="自动启动已关闭"
-    proxy_enabled_success_msg="代理已开启"
-    proxy_off_success_msg="代理已关闭"
     status_running_msg="状态：运行中"
     status_not_running_msg="状态：未运行"
     status_ui_msg="ClashUI："
@@ -176,6 +204,13 @@ chinese_language(){
     status_clash_path_msg="Clash安装路径："
     list_sub_url_msg="订阅地址："
     list_sub_update_interval_msg="更新间隔："
+    proxy_port_update_msg="检测到Clash http代理端口已更改并已开启代理,请重新设置代理"
+    proxy_manually_running_msg="请手动运行此命令，否则可能无法访问互联网"
+    proxy_proxy_command_msg="命令：source $script_path proxy"
+    proxy_source_command_msg="不要使用source执行除proxy其他命令"
+    proxy_not_source_command_msg="请使用source执行proxy命令"
+    proxy_on_success_msg="代理已开启"
+    proxy_off_success_msg="代理已关闭"
     help_msg="
       命令                  参数                           备注
     install        版本             可为空       安装Clash，默认为最新版本
@@ -192,8 +227,8 @@ chinese_language(){
     list           空                            查询所有订阅信息
     auto_start     true或false      可为空       启用或禁用开机自启动功能，默认为true
     status         空                            查看Clash相关信息
-    proxy          true或false      可为空       启用或禁用本机代理，默认为true"
-    main_msg="相关命令输入help进行查看"
+    proxy          true或false      可为空       启用或禁用本机代理，默认为true，此命令需要使用source运行"
+    main_msg="无效命令，相关命令输入help进行查看"
     # 中文提示文字结束
 }
 
@@ -361,20 +396,17 @@ get_yaml_value() {
 
 # 失败
 failed() {
-    printf "\\033[60G[\\033[1;31mFAILED\\033[0;39m]\r"
+    printf "\\033[88G[\\033[1;31mFAILED\\033[0;39m]\r"
     echo "$1"
-    exit 1
+    is_true=${2:-true}
+    if $is_true;then
+        exit 1
+    fi
 }
 
-# 成功
-success() {
-    printf "\\033[60G[\\033[1;32m  OK  \\033[0;39m]\r"
-    echo "$1"
-}
-
-# 提醒
+# 警告
 warn() {
-    printf "\\033[60G[\\033[1;33m WARN \\033[0;39m]\r"
+    printf "\\033[88G[\\033[1;33m WARN \\033[0;39m]\r"
     echo "$1"
     is_true=${2:-true}
     if $is_true;then
@@ -382,6 +414,25 @@ warn() {
     fi
 }
 
+# 提醒
+remind(){
+    printf "\\033[88G[\\033[1;36mREMIND\\033[0;39m]\r"
+    echo "$1"
+    is_true=${2:-false}
+    if $is_true;then
+        exit 0
+    fi
+}
+
+# 成功
+success() {
+    printf "\\033[88G[\\033[1;32m  OK  \\033[0;39m]\r"
+    echo "$1"
+    is_true=${2:-false}
+    if $is_true;then
+        exit 0
+    fi
+}
 # 验证true false ''默认为true
 verify() {
     if [ "$1" != 'true' ] && [ "$1" != 'false' ]; then
@@ -407,23 +458,23 @@ require() {
 }
 
 # 初始化配置
-init() {
+init_config() {
     echo "$init_config_start_msg"
     # 创建clash目录
-    if [ ! -d "${clash_catalog}" ]; then
-        mkdir -p "${clash_catalog}"
+    if [ ! -d "${clash_dir}" ]; then
+        mkdir -p "${clash_dir}"
     fi
     # 创建配置目录
-    if [ ! -d "${config_catalog}" ]; then
-        mkdir -p "${config_catalog}"
+    if [ ! -d "${config_dir}" ]; then
+        mkdir -p "${config_dir}"
     fi
     # 创建logs目录
-    if [ ! -d "${logs_catalog}" ]; then
-        mkdir -p "${logs_catalog}"
+    if [ ! -d "${logs_dir}" ]; then
+        mkdir -p "${logs_dir}"
     fi
     # 创建subscribe配置目录
-    if [ ! -d "${subscribe_config_catalog}" ]; then
-        mkdir "${subscribe_config_catalog}"
+    if [ ! -d "${subscribe_dir}" ]; then
+        mkdir "${subscribe_dir}"
     fi
     # 创建clashtool和订阅配置文件
     if [ ! -f "${clashtool_config_path}" ]; then
@@ -433,7 +484,8 @@ init() {
             echo "version="
             echo "proxy=false"
             echo "autostart=false"
-            echo "autoupdatesub=true"
+            echo "autoUpdateSub=true"
+            echo "proxyPort=7890"
             echo ""
             echo "[subscribe]"
             echo "names="
@@ -453,11 +505,10 @@ init() {
             echo "mode: Rule"
             echo "log-level: error"
             echo "external-controller: 0.0.0.0:9090"
-            echo "external-ui: ${clash_gh_pages_catalog}"
+            echo "external-ui: ${clash_ui_dir}"
             echo "secret: ${secret}"
         } >> "${user_config_path}"
     fi
-
     success "$init_config_success_msg"
 }
 
@@ -480,22 +531,21 @@ download(){
     fi
 
     echo "${download_start_msg}${tag}"
-    # 临时关闭本机代理
-    _proxy=$(get_clashtool_config "proxy")
-    if [ "$_proxy" = "true" ];then
-        proxy_off
+    # 关闭本shell代理
+    proxy=$(get_clashtool_config "proxy")
+    if [ "$proxy" = "true" ];then
+        unset no_proxy
+        for key in $proxy_keys; do
+            unset "$key"
+        done
     fi
     # 使用curl下载文件
-    if $enable;then
+    if [ "$enable" = "true" ];then
         curl "${github_proxy}${url}" -o "$file_path"
     else
         curl "${url}" -o "$file_path"
     fi
     _status=$?
-    # 恢复本机代理
-    if [ "$_proxy" = "true" ];then
-        proxy_on
-    fi
     # 检查curl命令的退出状态
     if [ $_status -ne 0 ]; then
         failed "${tag}${download_failed_msg}"
@@ -573,7 +623,7 @@ install_clash() {
         esac
     fi
     # 下载clash
-    clash_temp_path="${clash_catalog}/temp_clash"
+    clash_temp_path="${clash_dir}/temp_clash"
     download "${clash_temp_path}.gz" "https://github.com/Dreamacro/clash/releases/download/${version}/clash-linux-${platform}-${version}.gz" "Clash"
     # 停止clash
     autostop
@@ -615,19 +665,19 @@ install_ui() {
     else
         failed "$install_ui_parameter_failed_msg"
     fi
-    download "${clash_catalog}/gh-pages.zip" "$url" "${ui}"
+    download "${clash_dir}/gh-pages.zip" "$url" "${ui}"
     # 删除当前已安装UI
-    if [ -d "${clash_gh_pages_catalog}" ]; then
+    if [ -d "${clash_ui_dir}" ]; then
         echo "$delete_ui_success_msg"
-        rm -rf "${clash_gh_pages_catalog}"
+        rm -rf "${clash_ui_dir}"
     fi
     echo "${install_ui_start_msg}"
     # 解压
-    unzip -q -d "${clash_catalog}" "${clash_catalog}/gh-pages.zip"
+    unzip -q -d "${clash_dir}" "${clash_dir}/gh-pages.zip"
     # 重命名
-    mv "${clash_catalog}/${ui_name}" "${clash_gh_pages_catalog}"
+    mv "${clash_dir}/${ui_name}" "${clash_ui_dir}"
     # 删除已下载文件
-    rm "${clash_catalog}/gh-pages.zip"
+    rm "${clash_dir}/gh-pages.zip"
     success "$install_ui_success_msg"
 }
 
@@ -640,7 +690,7 @@ install() {
         # 安装依赖软件
         require
         # 初始化目录配置
-        init
+        init_config
         # 安装 clash
         install_clash "$1"
         # 安装 ui
@@ -651,9 +701,10 @@ install() {
 # 卸载clash
 uninstall() {
     # 删除clash
-    if [ -d "${clash_catalog}" ]; then
+    if [ -d "${clash_dir}" ]; then
+        # 关闭calash
         autostop
-        if [ "$(get_clashtool_config 'autostart')" = 'true' ];then
+        if [ "$(get_clashtool_config 'autoStart')" = 'true' ];then
             # 关闭自动启动
             auto_start false
         fi
@@ -661,7 +712,7 @@ uninstall() {
             # 关闭自动更新配置
             auto_update_sub false
             # 删除Clash所有相关文件
-            rm -rf "${clash_catalog}"
+            rm -rf "${clash_dir}"
         else
             # 删除clash程序文件
             rm -rf "${clash_path}"
@@ -693,7 +744,7 @@ processing_config(){
     fi
 
     # 文件不存在则更新订阅
-    if [ ! -f "${subscribe_config_catalog}/${use}.yaml" ];then
+    if [ ! -f "${subscribe_dir}/${use}.yaml" ];then
         update_sub "$use"
     fi
 
@@ -707,7 +758,19 @@ processing_config(){
             ($1 in a) { $2=a[$1]; delete a[$1] }
             { print }
             END { for (k in a) print k, a[k] }
-        ' "${user_config_path}" "${subscribe_config_catalog}/${use}.yaml" > "${config_path}"
+        ' "${user_config_path}" "${subscribe_dir}/${use}.yaml" > "${config_path}"
+    fi
+
+    proxy_port=$(get_yaml_value 'port' "$user_config_path")
+    
+    # 判断用户是否修改监http听端口
+    if [ "$(get_clashtool_config 'proxyPort')" != "$proxy_port" ];then
+        set_clashtool_config 'proxyPort' "$proxy_port"
+        if [ "$(get_clashtool_config 'porxy')" = 'true' ];then
+            remind "$proxy_port_update_msg"
+            remind "$proxy_manually_running_msg"       
+            remind "$proxy_proxy_command_msg true"
+        fi
     fi
 }
 
@@ -722,11 +785,11 @@ start() {
             processing_config "$use"
             echo "$clash_start_msg"
             # 启动clash
-            nohup "${clash_path}" -d "${config_catalog}" > "${logs_catalog}/clash.log" 2>&1 &
+            nohup "${clash_path}" -d "${config_dir}" > "${logs_dir}/clash.log" 2>&1 &
             # 等待2秒时间输出日志
             sleep 2
             # 根据输出日志判断是否启动失败
-            result=$(awk -v search="level=fatal" -F 'msg=' '/level=fatal/ && $0 ~ search {gsub(/"/, "", $2); print $2; found=1} END{if (found != 1) exit 1}' "${logs_catalog}/clash.log")
+            result=$(awk -v search="level=fatal" -F 'msg=' '/level=fatal/ && $0 ~ search {gsub(/"/, "", $2); print $2; found=1} END{if (found != 1) exit 1}' "${logs_dir}/clash.log")
             if [ -n "$result" ];then
                 echo "$result"
                 failed "$clash_yaml_failed_msg"
@@ -737,12 +800,8 @@ start() {
             if [ -z "$pid" ];then
                 failed "$clash_start_failed_msg"
             fi
+            # 更改配置中默认使用的配置文件
             set_subscribe_config '' 'use' "${use}"
-            # 判断是否需要开启本地代理
-            _proxy=$(get_clashtool_config "proxy")
-            if [ "$_proxy" = "true" ];then
-                proxy_on
-            fi
             # 修改登录状态
             state=true
             # 显示提示信息
@@ -764,10 +823,10 @@ stop() {
         # 根据clash PID 结束Clash
         kill -9 "${pid}"
         pid=""
-        # 关闭系统代理
-        _proxy=$(get_clashtool_config "proxy")
-        if [ "$_proxy" = "true" ];then
-            proxy_off
+        # 提醒关闭系统代理
+        if [ "$(get_clashtool_config "proxy")" = "true" ];then
+            remind "$proxy_manually_running_msg"
+            remind "$proxy_proxy_command_msg false"
         fi
         success "$clash_stop_success_msg"
     else
@@ -811,7 +870,7 @@ status() {
     _version=$(get_clashtool_config 'version')
     _sub=$(get_subscribe_config '' 'use')
     _secret=$(get_yaml_value 'secret' "$config_path")
-    _autostart=$(get_clashtool_config 'autostart')
+    _autostart=$(get_clashtool_config 'autoStart')
     if $state; then
         echo "$status_running_msg"
     else
@@ -877,8 +936,8 @@ del() {
         # 删除订阅配置信息
         del_subscribe_config "${name}"
         # 删除下载订阅文件
-        if [ -f "${subscribe_config_catalog}/${name}.yaml" ]; then
-            rm "${subscribe_config_catalog}/${name}.yaml"
+        if [ -f "${subscribe_dir}/${name}.yaml" ]; then
+            rm "${subscribe_dir}/${name}.yaml"
         fi
         # 判断当前订阅是否正在使用
         use=$(get_subscribe_config '' 'use')
@@ -933,9 +992,9 @@ update_sub() {
 download_sub() {
     name=$1
     url=$(get_subscribe_config "${name}" "url")
-    temp_sub_path="${subscribe_config_catalog}/${name}.new.yaml"
+    temp_sub_path="${subscribe_dir}/${name}.new.yaml"
     download "${temp_sub_path}" "${url}" "${name}" $sub_proxy
-    mv "$temp_sub_path" "${subscribe_config_catalog}/${name}.yaml"
+    mv "$temp_sub_path" "${subscribe_dir}/${name}.yaml"
 }
 
 # 函数名称：crontab_tool
@@ -985,19 +1044,19 @@ auto_update_sub() {
         echo "$names" | tr ',' '\n' | while IFS= read -r name; do
             if [ -n "$name" ]; then
                 interval=$(get_subscribe_config "$name" 'interval')
-                if ! $enable; then
+                if ! [ "$enable" = "true" ]; then
                     interval=0
                 fi
-                crontab_tool "$interval" "$script_path update_sub ${name} >> ${logs_catalog}/crontab.log 2>&1"
+                crontab_tool "$interval" "$script_path update_sub ${name} >> ${logs_dir}/crontab.log 2>&1"
             fi
         done
     else
         # 设置指定定时任务
-        if ! $enable; then
+        if ! [ "$enable" = "true" ]; then
             interval=0
         fi
         interval=$(get_subscribe_config "$sub_name" 'interval')
-        crontab_tool "$interval" "$script_path update_sub ${sub_name} >> ${logs_catalog}/crontab.log 2>&1"
+        crontab_tool "$interval" "$script_path update_sub ${sub_name} >> ${logs_dir}/crontab.log 2>&1"
     fi
 }
 
@@ -1009,13 +1068,12 @@ auto_start() {
     # 是否开机运行
     enable=${1:-true}
     verify "$enable"
+    service_name="myscript"
     # 判断 Linux 发行版
     if [ -f /etc/lsb-release ] || [ -f /etc/debian_version ]; then
         # Ubuntu 或 Debian
-        service_name="myscript"
-    
         # 启用或禁用开机运行
-        if $enable; then
+        if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
             if ! grep -qF "$script" "/etc/init.d/$service_name"; then
                 # 创建服务脚本文件
@@ -1044,11 +1102,9 @@ auto_start() {
             fi
         fi
     elif [ -f /etc/arch-release ]; then
-        # Arch Linux
-        service_name="myscript"
-    
+        # Arch Linux  
         # 启用或禁用开机运行
-        if $enable; then
+        if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
             if ! grep -qF "$script" "/etc/systemd/system/$service_name.service"; then
                 # 添加 systemd 服务
@@ -1078,7 +1134,7 @@ auto_start() {
         rc_local_file="/etc/local.d/startup.start"
     
         # 启用或禁用开机运行
-        if $enable; then
+        if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
             if ! grep -qF "$script" "$rc_local_file"; then
                 # 创建开机启动脚本
@@ -1102,7 +1158,7 @@ auto_start() {
         rc_local_file="/etc/rc.d/rc.local"
     
         # 启用或禁用开机运行
-        if $enable; then
+        if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
             if ! grep -qF "$script" "$rc_local_file"; then
                 # 将脚本添加到 rc.local
@@ -1118,53 +1174,74 @@ auto_start() {
         failed "$unsupported_linux_distribution_failed_msg"
     fi
     
-    set_clashtool_config 'autostart' "${enable}"
+    set_clashtool_config 'autoStart' "${enable}"
     
-    if ${enable}; then
+    if [ "$enable" = "true" ]; then
         success "$auto_start_enabled_success_msg"
     else
         success "$auto_start_turned_off_success_msg"
     fi
 }
 
-# 开启关闭代理
-proxy(){
-    enable=${1:-true}
-    verify "$enable"
-    if $enable ;then
-        if [ $state = "false" ];then
-            failed "$clash_not_running_warn_msg"
-        fi
-        proxy_on
-    else
-        proxy_off
-    fi
-    set_clashtool_config 'proxy' "${enable}"
-}
-
 # 开启系统代理
 proxy_on() {
-    port=$(get_yaml_value "port" "${config_path}")
-	export http_proxy="http://127.0.0.1:$port"
-    export HTTP_PROXY="http://127.0.0.1:$port"
-	export https_proxy="http://127.0.0.1:$port"
-    export HTTPS_PROXY="http://127.0.0.1:$port"
-	export no_proxy=127.0.0.1,localhost
- 	export NO_PROXY=127.0.0.1,localhost
-	success "$proxy_enabled_success_msg"
+    if $state;then
+        proxy_host="http://127.0.0.1:$(get_yaml_value 'port' "$user_config_path")"
+        # 检查 "$bashrc" 是否存在，并添加或修改代理设置
+        if [ -f "$bashrc" ]; then
+            for key in $proxy_keys; do
+                if grep -q "$key=" "$bashrc"; then
+                    # 如果已存在，则进行修改
+                    sed -i "s|${key}=.*|${key}=${proxy_host}|" "$bashrc"
+                else
+                    # 如果不存在，则添加设置
+                    echo "export $key=$proxy_host" >> "$bashrc"
+                fi
+                export "$key"="$proxy_host" 
+            done
+            if ! grep -q "no_proxy=" "$bashrc"; then
+                # 如果不存在，则添加设置
+                echo "export no_proxy=localhost,127.0.0.1" >> "$bashrc"
+                export no_proxy="localhost,127.0.0.1"          
+            fi
+        else
+            for key in $proxy_keys; do
+                echo "export $key=$proxy_host" >> "$bashrc"
+                export "$key"="$proxy_host" 
+            done
+            echo "export no_proxy=localhost,127.0.0.1"
+            export no_proxy="localhost,127.0.0.1" 
+        fi
+        # 更改配置文件中的代理状态
+        set_clashtool_config 'proxy' "$enable"
+        success "$proxy_on_success_msg"
+    else
+        warn "$clash_not_running_warn_msg" false
+    fi
 }
 
 # 关闭系统代理
 proxy_off(){
-	unset http_proxy
-  	unset HTTP_PROXY
-	unset https_proxy
-	unset HTTPS_PROXY
-	unset no_proxy
-	unset NO_PROXY
+    for key in $proxy_keys; do
+        sed -i "/$key=/d" "$bashrc"
+        unset "$key"
+    done
+    sed -i "/no_proxy=/d" "$bashrc"
+    unset no_proxy
+    # 更改配置文件中的代理状态
+    set_clashtool_config 'proxy' "$enable"
 	success "$proxy_off_success_msg"
 }
 
+proxy(){
+    enable=${1:-true}
+    verify "$enable"
+    if [ "$enable" = "true" ];then
+        proxy_on
+    else
+        proxy_off
+    fi
+}
 # 主函数
 main() {
     fun=$1
@@ -1173,59 +1250,69 @@ main() {
     if $chinese;then
         chinese_language
     fi
-    case "${fun}" in
-    "install")
-        install "${var}"
-        ;;
-    "uninstall")
-        uninstall "${var}"
-        ;;
-    "update")
-        update "${var}"
-        ;;
-    "install_ui")
-        install_ui "${var}"
-        ;;
-    "start")
-        start "${var}"
-        ;;
-    "stop")
-        stop
-        ;;
-    "restart")
-        restart "${var}"
-        ;;
-    "reload")
-        reload "${var}"
-        ;;
-    "add")
-        add "${var}"
-        ;;
-    "del")
-        del "${var}"
-        ;;
-    "update_sub")
-        update_sub "${var}"
-        ;;
-    "list")
-        list
-        ;;
-    "auto_start")
-        auto_start "${var}"
-        ;;
-    "status")
-        status
-        ;;
-    "proxy")
-        proxy "${var}"
-        ;;
-    "help")
-        echo "$help_msg"
-        ;;
-    *)
-        echo "$main_msg"
-        ;;
-    esac
+    # 判断使用的命令类型
+    if [ "${0#-}" = "$0" ];then
+        case "${fun}" in
+        "install")
+            install "$var"
+            ;;
+        "uninstall")
+            uninstall "$var"
+            ;;
+        "update")
+            update "$var"
+            ;;
+        "install_ui")
+            install_ui "$var"
+            ;;
+        "start")
+            start "$var"
+            ;;
+        "stop")
+            stop
+            ;;
+        "restart")
+            restart "$var"
+            ;;
+        "reload")
+            reload "$var"
+            ;;
+        "add")
+            add "$var"
+            ;;
+        "del")
+            del "$var"
+            ;;
+        "update_sub")
+            update_sub "$var"
+            ;;
+        "list")
+            list
+            ;;
+        "auto_start")
+            auto_start "$var"
+            ;;
+        "status")
+            status
+            ;;
+        "proxy")
+            failed "$proxy_not_source_command_msg" false
+            failed "${proxy_proxy_command_msg} $enable"
+            ;;
+        "help")
+            echo "$help_msg"
+            ;;
+        *)
+            echo "$main_msg"
+            ;;
+        esac
+    else
+        if [ "$fun" = "proxy" ];then
+            proxy "$var"
+        else
+            failed "$proxy_source_command_msg" false
+        fi
+    fi
 }
 
 # 执行主函数

@@ -61,7 +61,7 @@ user_config_path="${config_dir}/user.yaml"
 clashtool_config_path="${config_dir}/clashtool.ini"
 
 # 保存当前clash程序运行状态
-pid=$(pgrep -f "$clash_path")
+pid=$(pgrep -f "^$clash_path -d ${config_dir}\$")
 if [ -z "$pid" ]; then
     state=false
 else
@@ -70,6 +70,7 @@ fi
 # 英文提示文字开始——ChatGPT翻译，给不支持中文的linux系统使用
 verify_failed_msg="Parameter can only be true, false, or '' (default is true)"
 require_curl_failed_msg="Unrecognized package manager, please install the curl software manually"
+require_unzip_failed_msg="Unrecognized package manager, please install the unzip software manually"
 init_config_start_msg="Initializing configuration file"
 init_config_success_msg="Configuration file initialized successfully"
 download_file_path_null_msg="Download path cannot be empty"
@@ -153,6 +154,7 @@ chinese_language(){
     # 中文提示文字开始
     verify_failed_msg="参数只能是true、false 或 ''， ''默认为true"
     require_curl_failed_msg="无法识别包管理器，请自行安装curl软件"
+    require_unzip_failed_msg="无法识别包管理器，请自行安装unzip软件"
     init_config_start_msg="初始化配置文件"
     init_config_success_msg="配置文件初始化成功"
     download_file_path_null_msg="下载路径不能为空"
@@ -446,13 +448,25 @@ require() {
     # 检查并安装curl
     if ! command -v curl >/dev/null 2>&1; then
         if command -v apt >/dev/null 2>&1; then
-            apt install -y curl
+            apt install curl -y
         elif command -v yum >/dev/null 2>&1; then
-            yum install -y curl
+            yum install curl -y
         elif command -v apk >/dev/null 2>&1; then
-            apk add --update curl
+            apk add curl -y
         else
             failed "$require_curl_failed_msg"
+        fi
+    fi
+    # 检查安装unzip，竟然有linux没预安装
+    if ! command -v unzip >/dev/null 2>&1; then
+        if command -v apt >/dev/null 2>&1; then
+            apt install unzip -y
+        elif command -v yum >/dev/null 2>&1; then
+            yum install unzip -y
+        elif command -v apk >/dev/null 2>&1; then
+            apk add unzip -y
+        else
+            failed "$require_unzip_failed_msg"
         fi
     fi
 }
@@ -642,7 +656,6 @@ install_clash() {
     set_clashtool_config 'version' "${version}"
     # 启动clash
     success "$install_clash_success_msg"
-    autostart ""
 }
 
 # 安装UI
@@ -728,6 +741,7 @@ update() {
     version=$1
     if [ -f "${clash_path}" ]; then
         install_clash "$version"
+        autostart ""
     else
         failed "$not_install_clash_msg"
     fi

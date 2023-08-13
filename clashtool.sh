@@ -119,6 +119,7 @@ status_clash_version_msg="Clash version:"
 status_sub_msg="Current subscription file:"
 status_auto_start_msg="Auto-start on boot:"
 status_secret_msg="webUI link password:"
+status_proxy_msg="Local proxy status:"
 status_clash_path_msg="Clash installation path:"
 list_sub_url_msg="Subscription URL:"
 list_sub_update_interval_msg="Update Interval:"
@@ -204,6 +205,7 @@ chinese_language(){
     status_auto_start_msg="开机自动启动："
     status_secret_msg="webUI链接密码："
     status_clash_path_msg="Clash安装路径："
+    status_proxy_msg="本机代理状态："
     list_sub_url_msg="订阅地址："
     list_sub_update_interval_msg="更新间隔："
     proxy_port_update_msg="检测到Clash http代理端口已更改并已开启代理,请重新设置代理"
@@ -497,7 +499,7 @@ init_config() {
             echo "ui=dashboard"
             echo "version="
             echo "proxy=false"
-            echo "autostart=false"
+            echo "autoStart=false"
             echo "autoUpdateSub=true"
             echo "proxyPort=7890"
             echo ""
@@ -883,6 +885,7 @@ status() {
     _ui=$(get_clashtool_config 'ui')
     _version=$(get_clashtool_config 'version')
     _sub=$(get_subscribe_config '' 'use')
+    _proxy=$(get_clashtool_config 'proxy')
     _secret=$(get_yaml_value 'secret' "$config_path")
     _autostart=$(get_clashtool_config 'autoStart')
     if $state; then
@@ -895,6 +898,7 @@ status() {
     echo "${status_sub_msg}${_sub}"
     echo "${status_auto_start_msg}${_autostart}"
     echo "${status_secret_msg}${_secret}"
+    echo "${status_proxy_msg}${_proxy}"
     echo "${status_clash_path_msg}${clash_path}"
 }
 
@@ -1082,14 +1086,15 @@ auto_start() {
     # 是否开机运行
     enable=${1:-true}
     verify "$enable"
-    service_name="myscript"
+    service_name=$(basename "$script_path")
+    service_name=${service_name%.sh}
     # 判断 Linux 发行版
     if [ -f /etc/lsb-release ] || [ -f /etc/debian_version ]; then
         # Ubuntu 或 Debian
         # 启用或禁用开机运行
         if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
-            if ! grep -qF "$script" "/etc/init.d/$service_name"; then
+            if [ ! -f "/etc/init.d/$service_name" ]; then
                 # 创建服务脚本文件
                 {
                     echo "#!/bin/bash"
@@ -1120,7 +1125,7 @@ auto_start() {
         # 启用或禁用开机运行
         if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
-            if ! grep -qF "$script" "/etc/systemd/system/$service_name.service"; then
+            if [ ! -f "/etc/systemd/system/$service_name.service" ]; then
                 # 添加 systemd 服务
                 {
                     echo "[Unit]"
@@ -1145,12 +1150,12 @@ auto_start() {
         fi
     elif [ -f /etc/alpine-release ]; then
         # Alpine Linux
-        rc_local_file="/etc/local.d/startup.start"
+        rc_local_file="/etc/local.d/$service_name.start"
     
         # 启用或禁用开机运行
         if [ "$enable" = "true" ]; then
             # 检查脚本是否已存在
-            if ! grep -qF "$script" "$rc_local_file"; then
+            if [ ! -f "$rc_local_file" ]; then
                 # 创建开机启动脚本
                 echo "$script" >>"$rc_local_file"
                 chmod +x "$rc_local_file"
@@ -1169,7 +1174,7 @@ auto_start() {
         fi
     elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ]; then
         # CentOS
-        rc_local_file="/etc/rc.d/rc.local"
+        rc_local_file="/etc/rc.d/$service_name.local"
     
         # 启用或禁用开机运行
         if [ "$enable" = "true" ]; then

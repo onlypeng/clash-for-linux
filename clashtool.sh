@@ -719,6 +719,7 @@ uninstall() {
     if [ -d "${clash_dir}" ]; then
         # 关闭calash
         autostop
+        
         if [ "$(get_clashtool_config 'autoStart')" = 'true' ];then
             # 关闭自动启动
             auto_start false
@@ -740,13 +741,9 @@ uninstall() {
 
 # 更新clash
 update() {
-    version=$1
-    if [ -f "${clash_path}" ]; then
-        install_clash "$version"
-        autostart ""
-    else
-        failed "$not_install_clash_msg"
-    fi
+    autostop ""
+    install_clash "$$1"
+    autostart ""
 }
 
 # 处理Clash配置文件
@@ -797,37 +794,34 @@ start() {
     if [ -n "$pid" ]; then
         warn "$clash_running_warn_msg"
     else
-        if [ -f "${clash_path}" ]; then
-            processing_config "$use"
-            echo "$clash_start_msg"
-            # 启动clash
-            nohup "${clash_path}" -d "${config_dir}" > "${logs_dir}/clash.log" 2>&1 &
-            # 等待2秒时间输出日志
-            sleep 2
-            # 根据输出日志判断是否启动失败
-            result=$(awk -v search="level=fatal" -F 'msg=' '/level=fatal/ && $0 ~ search {gsub(/"/, "", $2); print $2; found=1} END{if (found != 1) exit 1}' "${logs_dir}/clash.log")
-            if [ -n "$result" ];then
-                echo "$result"
-                failed "$clash_yaml_failed_msg"
-            fi
+        processing_config "$use"
+        echo "$clash_start_msg"
+        # 启动clash
+        nohup "${clash_path}" -d "${config_dir}" > "${logs_dir}/clash.log" 2>&1 &
+        # 等待2秒时间输出日志
+        sleep 2
+        # 根据输出日志判断是否启动失败
+        result=$(awk -v search="level=fatal" -F 'msg=' '/level=fatal/ && $0 ~ search {gsub(/"/, "", $2); print $2; found=1} END{if (found != 1) exit 1}' "${logs_dir}/clash.log")
+        if [ -n "$result" ];then
+            echo "$result"
+            failed "$clash_yaml_failed_msg"
+        fi
 
-            pid=$(pgrep -f "$clash_path")
-            # 进一步判断是否启动失败
-            if [ -z "$pid" ];then
-                failed "$clash_start_failed_msg"
-            fi
-            # 更改配置中默认使用的配置文件
-            set_subscribe_config '' 'use' "${use}"
-            # 修改登录状态
-            state=true
-            # 显示提示信息
-            port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
-            secret=$(get_yaml_value "secret" "${config_path}")
-            success "$clash_start_success_msg"
-            echo "${clash_ui_access_address_msg}http://<ip>:$port/ui"
-            echo "${clash_ui_access_secret_msg}${secret}"
-        else
-            failed "$not_install_clash_msg"
+        pid=$(pgrep -f "$clash_path")
+        # 进一步判断是否启动失败
+        if [ -z "$pid" ];then
+            failed "$clash_start_failed_msg"
+        fi
+        # 更改配置中默认使用的配置文件
+        set_subscribe_config '' 'use' "${use}"
+        # 修改登录状态
+        state=true
+        # 显示提示信息
+        port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
+        secret=$(get_yaml_value "secret" "${config_path}")
+        success "$clash_start_success_msg"
+        echo "${clash_ui_access_address_msg}http://<ip>:$port/ui"
+        echo "${clash_ui_access_secret_msg}${secret}"
         fi
     fi
 }
@@ -1104,8 +1098,8 @@ auto_start() {
                     echo "# Required-Stop:     \$remote_fs \$syslog"
                     echo "# Default-Start:     2 3 4 5"
                     echo "# Default-Stop:      0 1 6"
-                    echo "# Short-Description: My Startup Script"
-                    echo "# Description:       My Startup Script"
+                    echo "# Short-Description: $service_name Script"
+                    echo "# Description:       $service_name Script"
                     echo "### END INIT INFO"
                     echo ""
                     echo "$script"
@@ -1275,48 +1269,56 @@ main() {
         "install")
             install "$var"
             ;;
-        "uninstall")
-            uninstall "$var"
-            ;;
-        "update")
-            update "$var"
-            ;;
-        "install_ui")
-            install_ui "$var"
-            ;;
-        "start")
-            start "$var"
-            ;;
-        "stop")
-            stop
-            ;;
-        "restart")
-            restart "$var"
-            ;;
-        "reload")
-            reload "$var"
-            ;;
-        "add")
-            add "$var"
-            ;;
-        "del")
-            del "$var"
-            ;;
-        "update_sub")
-            update_sub "$var"
-            ;;
-        "list")
-            list
-            ;;
-        "auto_start")
-            auto_start "$var"
-            ;;
-        "status")
-            status
-            ;;
-        "proxy")
-            failed "$proxy_not_source_command_msg" false
-            failed "${proxy_proxy_command_msg} $enable"
+        "uninstall"|"update"|"install_ui"|"start"|"stop"|"restart"|"reload"|"add"|"del"|"update_sub"|"list"|"auto_start"|"status"|"proxy")
+            if [ -f "$clash_path" ]; then
+                case "${fun}" in
+                "uninstall")
+                    uninstall "$var"
+                    ;;
+                "update")
+                    update "$var"
+                    ;;
+                "install_ui")
+                    install_ui "$var"
+                    ;;
+                "start")
+                    start "$var"
+                    ;;
+                "stop")
+                    stop
+                    ;;
+                "restart")
+                    restart "$var"
+                    ;;
+                "reload")
+                    reload "$var"
+                    ;;
+                "add")
+                    add "$var"
+                    ;;
+                "del")
+                    del "$var"
+                    ;;
+                "update_sub")
+                    update_sub "$var"
+                    ;;
+                "list")
+                    list
+                    ;;
+                "auto_start")
+                    auto_start "$var"
+                    ;;
+                "status")
+                    status
+                    ;;
+                "proxy")
+                    failed "$proxy_not_source_command_msg" false
+                    failed "${proxy_proxy_command_msg} $enable"
+                    ;;
+                esac
+            else
+                failed "$not_install_clash_msg"
+            fi
             ;;
         "help")
             echo "$help_msg"
@@ -1324,7 +1326,7 @@ main() {
         *)
             echo "$main_msg"
             ;;
-        esac
+        esac 
     else
         if [ "$fun" = "proxy" ];then
             proxy "$var"

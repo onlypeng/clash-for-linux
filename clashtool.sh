@@ -822,7 +822,6 @@ start() {
         success "$clash_start_success_msg"
         echo "${clash_ui_access_address_msg}http://<ip>:$port/ui"
         echo "${clash_ui_access_secret_msg}${secret}"
-        fi
     fi
 }
 
@@ -847,7 +846,7 @@ stop() {
 # 重启clash
 restart() {
     stop
-    start
+    start ""
 }
 
 # 重载clash配置文件
@@ -1250,7 +1249,15 @@ proxy(){
     enable=${1:-true}
     verify "$enable"
     if [ "$enable" = "true" ];then
-        proxy_on
+        if [ -f "${clash_path}" ]; then
+            if $state ;then
+                proxy_on
+            else
+                failed "$clash_not_running_warn_msg"
+            fi
+        else
+            failed "$not_install_clash_msg"
+        fi
     else
         proxy_off
     fi
@@ -1269,7 +1276,7 @@ main() {
         "install")
             install "$var"
             ;;
-        "uninstall"|"update"|"install_ui"|"start"|"stop"|"restart"|"reload"|"add"|"del"|"update_sub"|"list"|"auto_start"|"status"|"proxy")
+        "uninstall"|"update"|"install_ui"|"start"|"stop"|"restart"|"reload"|"add"|"del"|"update_sub"|"list"|"auto_start"|"status")
             if [ -f "$clash_path" ]; then
                 case "${fun}" in
                 "uninstall")
@@ -1311,14 +1318,14 @@ main() {
                 "status")
                     status
                     ;;
-                "proxy")
-                    failed "$proxy_not_source_command_msg" false
-                    failed "${proxy_proxy_command_msg} $enable"
-                    ;;
                 esac
             else
                 failed "$not_install_clash_msg"
             fi
+            ;;
+        "proxy")
+            failed "$proxy_not_source_command_msg" false
+            remind "${proxy_proxy_command_msg} $enable"
             ;;
         "help")
             echo "$help_msg"

@@ -32,7 +32,7 @@ if [ "${0#-}" = "$0" ];then
 else
     # 使用source命令时使用get_scripts_path脚本获取脚本地址
     if [ ! -f "$get_scripts_path" ] ;then
-        failed "$not_install_clash_msg"
+        failed "$status_not_running_msg"
     fi
     script_path=$(cat $get_scripts_path)
 fi

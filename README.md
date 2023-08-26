@@ -29,3 +29,6 @@ clash相关信息获取位置，例：https://github.com/Dreamacro/clash/release
 <br>
 使用教程:<br>
 下载脚本：curl -O https://gh.ylpproxy.eu.org/https://raw.githubusercontent.com/onlypeng/clashtools/main/clashtool.sh
+给予运行权限：chmod 755 clashtool.sh
+运行脚本（非proxy命令）：./clashtool.sh 命令 参数
+运行脚本（proxy命令）：source clashtool.sh proxy 参数

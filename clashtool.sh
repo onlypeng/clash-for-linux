@@ -227,7 +227,7 @@ chinese_language(){
     reload         订阅名称         可为空       重载Clash，默认使用当前订阅配置
     add            订阅信息                      添加订阅信息：格式《订阅名称::订阅地址::订阅更新时间（小时）》
     del            订阅名称                      删除订阅
-    update_sub     订阅名称或all     可为空       更新订阅文件，默认更新当前使用订阅，参数为all时更新所有订阅
+    update_sub     订阅名称或all    可为空       更新订阅文件，默认更新当前使用订阅，参数为all时更新所有订阅
     list           空                            查询所有订阅信息
     auto_start     true或false      可为空       启用或禁用开机自启动功能，默认为true
     status         空                            查看Clash相关信息

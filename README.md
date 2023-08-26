@@ -26,3 +26,6 @@ clash相关信息获取位置，例：https://github.com/Dreamacro/clash/release
 配合这些软件食用效果更佳<br>
 &nbsp;&nbsp;&nbsp;&nbsp;浏览器插件：SwitchyOmega<br>
 &nbsp;&nbsp;&nbsp;&nbsp;Windows代理软件:ProxifierPE<br>
+<br>
+使用教程:<br>
+下载脚本：curl -O https://gh.ylpproxy.eu.org/https://raw.githubusercontent.com/onlypeng/clashtools/main/clashtool.sh

@@ -15,7 +15,7 @@ proxy_keys="http_proxy https_proxy ftp_proxy all_proxy"
 # get_scripts_path脚本存放目录
 get_scripts_dir="/tmp/clash/"
 # get_scripts_path脚本路径
-get_scripts_path="$get_scripts_dir/get_scripts_path.sh"
+get_scripts_path="$get_scripts_dir/clashtool_script_path.sh"
 
 # 判断是否使用了source 命令运行脚本
 if [ "${0#-}" = "$0" ];then
@@ -25,16 +25,16 @@ if [ "${0#-}" = "$0" ];then
     if [ ! -d $get_scripts_dir ];then
         mkdir -p $get_scripts_dir
     fi
-    # 如果不存在get_scripts_path脚本或脚本保存的路径与当前路径不一致则重新创建脚本
-    if [ ! -f "$get_scripts_path" ] || [ "$(sh $get_scripts_path)" != "$script_path" ];then
-        {
-            echo "# /bin/sh"
-            echo "echo \"$script_path\""
-        } > $get_scripts_path
+    # 如果不存在get_scripts_path脚本或脚本保存的路径与当前路径不一致则更新地址
+    if [ ! -f "$get_scripts_path" ] || [ "$(cat $get_scripts_path)" != "$script_path" ];then
+        echo "$script_path"> $get_scripts_path
     fi
 else
     # 使用source命令时使用get_scripts_path脚本获取脚本地址
-    script_path=$(sh $get_scripts_path)
+    if [ ! -f "$get_scripts_path" ] ;then
+        failed "$not_install_clash_msg"
+    fi
+    script_path=$(cat $get_scripts_path)
 fi
 
 # clash 安装目录
@@ -223,11 +223,11 @@ chinese_language(){
     install_ui     dashboard或yacd  可为空       安装web界面，默认安装dashboard
     start          订阅名称         可为空       启动Clash，默认，使用当前订阅配置
     stop           空                            停止Clash运行
-    restart        订阅名称         可为空       重载Clash，默认使用当前订阅配置
-    reload         订阅名称         可为空       重启Clash，默认使用当前订阅配置
+    restart        订阅名称         可为空       重启Clash，默认使用当前订阅配置
+    reload         订阅名称         可为空       重载Clash，默认使用当前订阅配置
     add            订阅信息                      添加订阅信息：格式《订阅名称::订阅地址::订阅更新时间（小时）》
     del            订阅名称                      删除订阅
-    update_sub     订阅名称或all                 更新订阅文件，默认更新当前使用订阅，参数为all时更新所有订阅
+    update_sub     订阅名称或all     可为空       更新订阅文件，默认更新当前使用订阅，参数为all时更新所有订阅
     list           空                            查询所有订阅信息
     auto_start     true或false      可为空       启用或禁用开机自启动功能，默认为true
     status         空                            查看Clash相关信息
@@ -660,7 +660,7 @@ install_clash() {
     success "$install_clash_success_msg"
 }
 
-# 安装UI
+# 安装UIee
 install_ui() {
     ui=$1
     # 没有指定UI则使用配置中指定UI

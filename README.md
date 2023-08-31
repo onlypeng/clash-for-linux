@@ -8,7 +8,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;\# 订阅使用github代理下载<br>
 &nbsp;&nbsp;&nbsp;&nbsp;sub_proxy=false<br>
 &nbsp;&nbsp;&nbsp;&nbsp;\# github下载代理地址<br>
-&nbsp;&nbsp;&nbsp;&nbsp;github_proxy="https://gh.ylpproxy.eu.org/"<br>
+&nbsp;&nbsp;&nbsp;&nbsp;github_proxy="https://ghproxy.com/"<br>
 <br>
 clash相关信息获取位置，例：https://github.com/Dreamacro/clash/releases 中的 clash-darwin-amd64-v1.16.0.gz<br>
 &nbsp;&nbsp;&nbsp;&nbsp;版本 例如：v1.16.0<br>

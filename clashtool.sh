@@ -135,24 +135,24 @@ proxy_not_source_command_msg="Please use 'source' to execute the 'proxy' command
 proxy_on_success_msg="Proxy is enabled."
 proxy_off_success_msg="Proxy is disabled."
 help_msg="
-      Command                  Parameters                    Description
-    install        Version             Optional       Install Clash (defaults to the latest version).
-    uninstall      all                 Optional       Uninstall Clash; use 'all' to remove related configurations.
-    update         Version             Optional       Update Clash (defaults to the latest version).
-    install_ui     dashboard or yacd    Optional       Install the web UI (defaults to dashboard).
-    uninstall_ui   None                Optional       Uninstall Clash UI.
-    update_ui      dashboard or yacd    Optional       Update or replace Clash UI (defaults to the currently used UI).
-    start          SubscriptionName    Optional       Start Clash, defaults to the current subscription.
-    stop           None                Optional       Stop Clash service.
-    restart        SubscriptionName    Optional       Restart Clash, defaults to the current subscription.
-    reload         SubscriptionName    Optional       Reload Clash, defaults to the current subscription.
-    add            SubscriptionInfo                   Add or modify subscription info (format: 'SubscriptionName::SubscriptionURL(LocalFilePath)::UpdateInterval(hours, can be empty)').
-    del            SubscriptionName                   Delete a subscription.
-    update_sub     SubscriptionName or all  Optional  Update the subscription file (defaults to the current subscription); 'all' updates all subscriptions (excluding local subscriptions).
-    list           None                Optional       List all subscription information.
-    auto_start     true or false        Optional       Enable or disable auto-start on boot (defaults to true).
-    status         None                Optional       View Clash-related information.
-    proxy          true or false        Optional       Enable or disable local proxy (defaults to true); this command must be executed using 'source'.
+    Command                  Parameters                             Description
+    install        Version                  Optional       Install Clash (defaults to the latest version).
+    uninstall      all                      Optional       Uninstall Clash; use 'all' to remove related configurations.
+    update         Version                  Optional       Update Clash (defaults to the latest version).
+    install_ui     dashboard or yacd        Optional       Install the web UI (defaults to dashboard).
+    uninstall_ui   None                     Optional       Uninstall Clash UI.
+    update_ui      dashboard or yacd        Optional       Update or replace Clash UI (defaults to the currently used UI).
+    start          SubscriptionName         Optional       Start Clash, defaults to the current subscription.
+    stop           None                     Optional       Stop Clash service.
+    restart        SubscriptionName         Optional       Restart Clash, defaults to the current subscription.
+    reload         SubscriptionName         Optional       Reload Clash, defaults to the current subscription.
+    add            SubscriptionInfo                        Add or modify subscription info (format: 'SubscriptionName::SubscriptionURL(LocalFilePath)::UpdateInterval(hours, can be empty)').
+    del            SubscriptionName                        Delete a subscription.
+    update_sub     SubscriptionName or all  Optional       Update the subscription file (defaults to the current subscription); 'all' updates all subscriptions (excluding local subscriptions).
+    list           None                     Optional       List all subscription information.
+    auto_start     true or false            Optional       Enable or disable auto-start on boot (defaults to true).
+    status         None                     Optional       View Clash-related information.
+    proxy          true or false            Optional       Enable or disable local proxy (defaults to true); this command must be executed using 'source'.
     "
 main_msg="Invalid command. Type 'help' to view available commands."
 # 英文提示文字结束

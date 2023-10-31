@@ -1,3 +1,5 @@
+本次升级由于更换相关安装和存放位置，需完全卸载以前版本，记得保存以前代理地址或文件。<br>
+
 功能：<br>
  安装Clash、卸载Clash、 更新Clash、 安装webUI界面、卸载webUI界面、 更新或更换webUI界面 启动Clash、 停止Clash、 重启Clash、 重载Clash、 添加订阅、 删除订阅、 更新订阅(可自动更新)、 查询所有订阅、 开机自启动(已测试alpine、centos、Ubuntu、debian)、 查当前运行Clash相关信息、 启用或禁用本机代理<br>
 <br>
@@ -19,7 +21,7 @@ clash相关信息获取位置，例：https://github.com/Dreamacro/clash/release
 &nbsp;&nbsp;&nbsp;&nbsp;版本 例如：v1.16.0<br>
 &nbsp;&nbsp;&nbsp;&nbsp;架构 例如：darwin-amd64<br>
 <br>
-用户更改clash用户配置文件《位置：vi /$HOME/clashs/cript_name(你设置的变量，没有省略)/config/user.yaml》 ，该配置文件中数据会自动覆盖订阅文件数据，仅支持基本的单行数据，不支持复杂数组等数据<br>
+用户更改clash用户配置文件《位置：vi /opt/clash/config/user.yaml》 ，该配置文件中数据会自动覆盖订阅文件数据，仅支持基本的单行数据，不支持复杂数组等数据<br>
 <br>
 详细命令可运行 ./clashtool help 查看<br>
 <br>

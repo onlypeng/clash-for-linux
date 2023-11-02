@@ -1012,10 +1012,11 @@ update_script(){
         warn "$install_equal_versions_warn_msg"
     fi
     download "${current_path}.temp" "$url" "Script"
-    mymv "${current_path}.temp" $current_path
+    cp "${current_path}.temp" $current_path
     if [ -d $clash_dir ];then
-        mycp $current_path $script_path
+        mycp "${current_path}.temp" $script_path
     fi
+    myrm "${current_path}.temp"
     success $update_script_success_msg
 }   
 

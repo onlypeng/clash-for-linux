@@ -1328,9 +1328,9 @@ download_sub() {
         # 下载订阅文件
         download "${temp_sub_path}" "${url}" "${name}" $sub_proxy
         # 检查订阅文件是否有效
-        check_conf "${subscribe_dir}/${name}.yaml"
+        check_conf "${temp_sub_path}/${name}.yaml"
         # 备份原先订阅
-        mymv "${subscribe_dir}/${name}.yaml" "${subscribe_backup_dir}/${name}$(date +'%Y%m%d%H').yaml"
+        mymv "${subscribe_dir}/${name}.yaml" "${subscribe_backup_dir}/${name}$(date +'%Y%m%d%H%M').yaml"
         # 重命名订阅文件
         mymv "$temp_sub_path" "${subscribe_dir}/${name}.yaml"
     fi

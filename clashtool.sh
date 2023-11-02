@@ -1,5 +1,5 @@
 #!/bin/sh
-# version：1.0.1
+# version:1.0.1
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -997,9 +997,9 @@ update_ui(){
 # 函数: 更新clashtool脚本
 update_script(){
     current_path=$(readlink -f "$0")
-    current=$(grep '^# version:' "$script_path" | head -1 | sed 's/.*: //')
+    current=$(grep '^# version:' "$script_path" | head -1 | sed 's/# version://')
     url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh'
-    version=$(curl -k -s ${github_proxy}${url} | grep '^# version:' | head -1 | sed 's/.*: //')
+    version=$(curl -k -s ${github_proxy}${url} | grep '^# version:' | head -1 | sed 's/# version://')
     if [ -z $version ];then
         failed $get_version_failed_msg
     fi

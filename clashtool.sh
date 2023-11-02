@@ -997,7 +997,7 @@ update_ui(){
 # 函数: 更新clashtool脚本
 update_script(){
     current_path=$(readlink -f "$0")
-    current=$(grep '^# version:' "$current_path" | head -1 | sed 's/.*: //')
+    current=$(grep '^# version:' "$script_path" | head -1 | sed 's/.*: //')
     url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh'
     version=$(curl -k -s ${github_proxy}${url} | grep '^# version:' | head -1 | sed 's/.*: //')
     if [ -z $version ];then
@@ -1006,9 +1006,9 @@ update_script(){
     if [ $current = $current ];then
         warn "$install_equal_versions_warn_msg"
     fi
-    download "${current_path}.temp" "$url" "Script"
-    mymv "${current_path}.temp" $current_path
-    mycp $current_path $script_path
+    download "${script_path}.temp" "$url" "Script"
+    mymv "${script_path}.temp" $script_path
+    mycp $script_path $(readlink -f "$0")
     success $update_script_success_msg
 }   
 

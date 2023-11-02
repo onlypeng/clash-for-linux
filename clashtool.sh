@@ -11,8 +11,8 @@ chinese=true
 max_retries=3
 # 订阅使用github代理下载
 sub_proxy=false
-# github下载代理地址，clash和ui的下载使用该代理
-github_proxy="https://ghproxy.com/"
+# github下载代理地址，clash和ui的下载使用该代理,最后携带/
+github_proxy="https://gh.ylpproxy.eu.org/"
 # 设置代理的环境变量
 proxy_keys="http https ftp socks"
 proxy_no="localhost,127.0.0.1,::1"
@@ -79,9 +79,9 @@ download_start_msg="Starting download"
 download_waiting_msg="Download failed. Waiting 5 seconds before the next attempt..."
 download_success_msg="Download successful"
 download_failed_msg="Download failed"
-get_version_failed_msg="Failed to retrieve version. Please specify the version manually."
-install_new_version_msg="Newly installed version:"
-install_current_version_msg="Currently installed version:"
+get_version_failed_msg="Failed to retrieve version."
+latest_version_msg="Latest Version:"
+current_version_msg="Currently version:"
 install_equal_versions_warn_msg="Newly installed version is the same as the current version"
 install_ui_parameter_failed_msg="Parameter error. It can only be 'dashboard' or 'yacd'. Default is the currently installed version."
 update_script_success_msg='Script Update Success'
@@ -158,6 +158,8 @@ chinese_language(){
     unsupported_linux_distribution_failed_msg="不支持的Linux发行版"
     recognition_system_failed_msg="无法确定当前操作系统架构类型。请自行填写platform参数"
     conf_failed_msg="配置文件错误"
+    latest_version_msg="最新版本："
+    current_version_msg="当前版本："
     was_install_msg="已安装"
     not_install_msg="未安装"
     install_start_msg="开始安装"
@@ -174,9 +176,7 @@ chinese_language(){
     download_waiting_msg="下载失败，等待5秒后进行下一次尝试..."
     download_success_msg="下载成功"
     download_failed_msg="下载失败"
-    get_version_failed_msg="获取版本失败，请自行指定版本"
-    install_new_version_msg="新安装版本："
-    install_current_version_msg="已安装版本："
+    get_version_failed_msg="获取版本失败"
     install_equal_versions_warn_msg="新安装版本与当前版本相同"
     install_ui_parameter_failed_msg="参数错误，只能为 dashboard 或 yacd，默认为当前安装版本"
     clash_running_warn_msg="Clash服务已运行"
@@ -834,7 +834,7 @@ download_clash(){
     # 获取配置中当前安装的版本
     current=$(get_clashtool_config 'version')
     if [ -n "$current" ];then
-        echo "${install_current_version_msg}${current}"
+        echo "${current_version_msg}${current}"
     fi
     # 没有指定版本则更新最新版本
     if [ -z "$version" ]; then
@@ -846,7 +846,7 @@ download_clash(){
         fi
     fi
     # 要安装的版本
-    echo "${install_new_version_msg}${version}"
+    echo "${latest_version_msg}${version}"
     # 判断版本是否相等
     if [ "${current}" = "${version}" ]; then
         warn "$install_equal_versions_warn_msg"
@@ -870,6 +870,9 @@ download_clash(){
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 install() {
     version=$1
+    if [ -d $clash_dir ];then
+        failed "Clash $was_install_msg"
+    fi
     # 检测安装依赖软件
     require
     # 创建服务脚本
@@ -997,18 +1000,22 @@ update_ui(){
 # 函数: 更新clashtool脚本
 update_script(){
     current_path=$(readlink -f "$0")
-    current=$(grep '^# version:' "$script_path" | head -1 | sed 's/# version://')
+    current=$(grep '^# version:' "$current_path" | head -1 | sed 's/# version://')
+    echo "${current_version_msg}$current"
     url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh'
     version=$(curl -k -s ${github_proxy}${url} | grep '^# version:' | head -1 | sed 's/# version://')
     if [ -z $version ];then
         failed $get_version_failed_msg
     fi
-    if [ $current = $current ];then
+    echo "${latest_version_msg}$version" 
+    if [ $version = $current ];then
         warn "$install_equal_versions_warn_msg"
     fi
-    download "${script_path}.temp" "$url" "Script"
-    mymv "${script_path}.temp" $script_path
-    mycp $script_path $(readlink -f "$0")
+    download "${current_path}.temp" "$url" "Script"
+    mymv "${current_path}.temp" $current_path
+    if [ -d $clash_dir ];then
+        mycp $current_path $script_path
+    fi
     success $update_script_success_msg
 }   
 
@@ -1646,11 +1653,8 @@ main() {
         fi
     else
         case "${fun}" in
-        "install")
-            if [ -d $clash_dir ];then
-                failed "Clash $was_install_msg"
-            fi
-            install "$var"
+        "install"| "update_script")
+            $fun "$var"
             ;;
         "uninstall"|"update"|"install_ui"|"uninstall_ui"|"update_ui"|"start"|"stop"|"restart"|"reload"|"add"|"list"|"del"|"update_sub"|"auto_update_sub"|"status"|"auto_start")
             if [ ! -d $clash_dir ];then

@@ -1,4 +1,5 @@
 #!/bin/sh
+# version：1.0.1
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -83,6 +84,7 @@ install_new_version_msg="Newly installed version:"
 install_current_version_msg="Currently installed version:"
 install_equal_versions_warn_msg="Newly installed version is the same as the current version"
 install_ui_parameter_failed_msg="Parameter error. It can only be 'dashboard' or 'yacd'. Default is the currently installed version."
+update_script_success_msg='Script Update Success'
 clash_running_warn_msg="Clash service is already running"
 clash_not_running_warn_msg="Clash service is not running"
 clash_start_msg="Starting Clash service"
@@ -131,6 +133,7 @@ help_msg="
     install_ui       dashboard or yacd        Optional    Install the web UI (defaults to dashboard).
     uninstall_ui     None                     Optional    Uninstall Clash UI.
     update_ui        dashboard or yacd        Optional    Update or replace Clash UI (defaults to the currently used UI).
+    update_script    None                                 Update clash-for-linux Script
     start            SubscriptionName         Optional    Start Clash, defaults to the current subscription.
     stop             None                     Optional    Stop Clash service.
     restart          SubscriptionName         Optional    Restart Clash, defaults to the current subscription.
@@ -162,6 +165,7 @@ chinese_language(){
     install_failed_msg="安装失败"
     uninstall_start_msg="开始卸载"
     uninstall_success_msg="卸载成功"
+    update_script_success_msg='脚本更新成功'
     require_check_msg="检测是否缺少依赖"
     require_install_failed_msg="无法识别包管理器，请自行安装"
     init_config_start_msg="初始化配置文件"
@@ -222,6 +226,7 @@ chinese_language(){
     install_ui      dashboard或yacd  可为空     安装ClashUI界面，默认安装dashboard
     uninstall_ui    空               可为空     卸载ClashUI
     update_ui       dashboard或yacd  可为空     更新或更换ClashUI，默认当前使用UI
+    update_script                               更新clash-for-linux脚本
     start           订阅名称         可为空     启动Clash，默认，使用当前订阅配置
     stop            空                          停止Clash运行
     restart         订阅名称         可为空     重启Clash，默认使用当前订阅配置
@@ -590,9 +595,9 @@ check_url(){
     # 判断地址是否有效
     echo "$sub_url_check_msg"
     if $sub_proxy;then
-        curl -sSf --max-time 15 "$url" > /dev/null
-    else
         curl -sSf --max-time 15 "${github_proxy}${url}" > /dev/null
+    else
+        curl -sSf --max-time 15 "$url" > /dev/null
     fi
     req=$?
     if [ $req -eq 0 ]; then
@@ -989,6 +994,23 @@ update_ui(){
         restart
     fi
 }
+# 函数: 更新clashtool脚本
+update_script(){
+    current_path=$(readlink -f "$0")
+    current=$(grep '^# version:' "$current_path" | head -1 | sed 's/.*: //')
+    url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh'
+    version=$(curl -k -s ${github_proxy}${url} | grep '^# version:' | head -1 | sed 's/.*: //')
+    if [ -z $version ];then
+        failed $get_version_failed_msg
+    fi
+    if [ $current = $current ];then
+        warn "$install_equal_versions_warn_msg"
+    fi
+    download "${current_path}.temp" "$url" "Script"
+    mymv "${current_path}.temp" $current_path
+    mycp $current_path $script_path
+    success $update_script_success_msg
+}   
 
 # 函数：处理订阅配置文件,用户自定义配置覆盖订阅配置
 # 参数: $1：sub_name - 订阅名称 （可为空），默认为当前使用订阅
@@ -1328,11 +1350,11 @@ download_sub() {
         # 下载订阅文件
         download "${temp_sub_path}" "${url}" "${name}" $sub_proxy
         # 检查订阅文件是否有效
-        check_conf "${temp_sub_path}/${name}.yaml"
+        check_conf "$temp_sub_path"
         # 备份原先订阅
         mymv "${subscribe_dir}/${name}.yaml" "${subscribe_backup_dir}/${name}$(date +'%Y%m%d%H%M').yaml"
         # 重命名订阅文件
-        mymv "$temp_sub_path" "${subscribe_dir}/${name}.yaml"
+        mymv "${temp_sub_path}" "${subscribe_dir}/${name}.yaml"
     fi
 }
 

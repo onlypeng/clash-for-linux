@@ -1,7 +1,7 @@
 本次升级由于更换相关安装和存放位置，需完全卸载以前版本，记得保存以前代理地址或文件。<br>
 
 功能：<br>
- 安装Clash、卸载Clash、 更新Clash、 安装webUI界面、卸载webUI界面、 更新或更换webUI界面 启动Clash、 停止Clash、 重启Clash、 重载Clash、 添加订阅、 删除订阅、 更新订阅(可自动更新)、 查询所有订阅、 开机自启动(已测试alpine、centos、Ubuntu、debian)、 查当前运行Clash相关信息、 启用或禁用本机代理<br>
+ 安装Clash、卸载Clash、 更新Clash、 安装webUI界面、卸载webUI界面、 更新或更换webUI界面、更新当前脚本、启动Clash、 停止Clash、 重启Clash、 重载Clash、 添加订阅、 删除订阅、 更新订阅(可自动更新)、 查询所有订阅、 开机自启动(已测试alpine、centos、Ubuntu、debian)、 查当前运行Clash相关信息、 启用或禁用本机代理<br>
 <br>
 脚本可自定义编辑参数<br>
 &nbsp;&nbsp;&nbsp;&nbsp;\# 网页初始链接密码，不填写则随机生成<br>

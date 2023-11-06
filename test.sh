@@ -5,9 +5,9 @@ ${path}/clashtool.sh install 'v1.16.0'
 ${path}/clashtool.sh update
 ${path}/clashtool.sh install_ui
 ${path}/clashtool.sh update_ui yacd
-${path}/clashtool.sh add pp::https://raw.githubusercontent.com/snakem982/proxypool/main/clashd0932.yaml::24
+${path}/clashtool.sh add pp::https://raw.githubusercontent.com/snakem982/proxypool/main/clash0c4c0.yaml::24
 crontab -l
-${path}/clashtool.sh add pp::https://raw.githubusercontent.com/snakem982/proxypool/main/clashd0932.yaml::0
+${path}/clashtool.sh add pp::https://raw.githubusercontent.com/snakem982/proxypool/main/clash0c4c0.yaml::0
 crontab -l
 ${path}/clashtool.sh list
 ${path}/clashtool.sh update_sub pp

@@ -1,5 +1,5 @@
 #!/bin/sh
-# version:1.0.1
+# version:1.0.2
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -7,6 +7,10 @@ secret=''
 platform=''
 # 使用中文提示输出语言
 chinese=true
+# clash项目库
+clash_repo='doreamon-design/clash'
+# clash releases名称规则  变量 版本 :version: 架构 :platform:
+download_clash_name='clash_:version:_linux_:platform:.tar.gz'
 # 下在错误重试次数
 max_retries=3
 # 订阅使用github代理下载
@@ -66,6 +70,7 @@ unsupported_linux_distribution_failed_msg="Unsupported Linux distribution."
 recognition_system_failed_msg="Unable to determine the current operating system architecture. Please specify the platform parameter."
 was_install_msg="was installed"
 not_install_msg="Not installed"
+file_does_not_exist='The downloaded file does not exist'
 install_start_msg="Starting installation"
 install_success_msg="Installation successful"
 install_failed_msg="Installation failed"
@@ -162,6 +167,7 @@ chinese_language(){
     current_version_msg="当前版本："
     was_install_msg="已安装"
     not_install_msg="未安装"
+    file_does_not_exist='下载的文件不存在'
     install_start_msg="开始安装"
     install_success_msg="安装成功"
     install_failed_msg="安装失败"
@@ -244,12 +250,6 @@ chinese_language(){
 }
 
 # 自动使用sudo
-myunzip(){
-    ${mysudo}unzip $@
-}
-mygunzip(){
-    ${mysudo}gunzip $@
-}
 mysystemctl(){
     ${mysudo}systemctl $@
 }
@@ -623,6 +623,25 @@ is_sourced() {
     fi
 }
 
+# 函数：获取下载文件名称
+get_download_filename() {
+    local url="$1"
+    local filename
+
+    # 尝试从URL中提取文件名
+    filename=$(basename "$url")
+
+    # 如果无法从URL中提取文件名，则获取文件头信息
+    if [ -z "$filename" ]; then
+        local headers
+        headers=$(curl -sI "$url")
+        filename=$(echo "$headers" | grep -i 'Content-Disposition' | sed -e 's/.*filename=//')
+        filename="${filename%\"}"
+        filename="${filename#\"}"
+    fi
+    echo "$filename"
+}
+
 # 函数：设置定时任务
 # 参数：
 #   $1: interval - 运行时间，为空则删除定时任务
@@ -684,6 +703,47 @@ install_procedure(){
     fi
 }
 
+# 函数：解压常用压缩文件到指定目录
+decompression() {
+    local archive_file="$1"
+    local destination="$2"
+
+    # 检测输出目录，不存在则创建
+    if [ ! -d "$destination" ]; then
+        mymkdir "$destination"
+    fi
+
+    # 使用 case 语句来匹配文件后缀
+    case "$archive_file" in
+        *.tar.gz)
+            ${mysudo}tar -xzf "$archive_file" -C "$destination"
+            ;;
+        *.tar)
+            ${mysudo}tar -xf "$archive_file" -C "$destination"
+            ;;
+        *.gz)
+            ${mysudo}gunzip -k -c "$archive_file" > "$destination/$(basename "$archive_file" .gz)"
+            ;;
+        *.zip)
+            ${mysudo}unzip -q "$archive_file" -d "$destination"
+            ;;
+        *.rar)
+            ${mysudo}unrar x "$archive_file" "$destination"
+            ;;
+        *.7z)
+            ${mysudo}7z x "$archive_file" -o"$destination"
+            ;;
+        *.bz2)
+            ${mysudo}bunzip2 -k -c "$archive_file" > "$destination/$(basename "$archive_file" .bz2)"
+            ;;
+        *)
+            echo "Unsupported archive format: $archive_file"
+            return 1
+            ;;
+    esac
+}
+
+
 # 函数：获取当前操作系统的架构
 get_platform(){
     if [ -z "${platform}" ]; then
@@ -731,10 +791,14 @@ get_linux_distribution() {
 # 函数：检查并安装依赖
 require() {
     echo "$require_check_msg"
+    # 检查并安装tar
+    install_procedure tar
     # 检查并安装curl
     install_procedure curl
     # 检查安装unzip，竟然有linux没预安装
     install_procedure unzip
+    # 检查安装unzip，竟然有linux没预安装
+    install_procedure gunzip
 }
 # 函数：初始化配置
 init_config() {
@@ -805,7 +869,7 @@ download(){
     # 使用curl下载文件
     while [ $retry_count -lt $max_retries ]; do
         if [ "$enable" = "true" ];then
-            mycurl "${github_proxy}${url}" -o "$file_path"
+            mycurl  "${github_proxy}${url}" -o "$file_path"
         else
             mycurl "${url}" -o "$file_path"
         fi
@@ -839,8 +903,8 @@ download_clash(){
     # 没有指定版本则更新最新版本
     if [ -z "$version" ]; then
         # 获取clash最新版本号
-        api_url=https://api.github.com/repos/Dreamacro/clash/releases/latest
-        version=$(curl -k -s $api_url | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':' '{print $2}')
+        api_url="https://api.github.com/repos/${clash_repo}/releases/latest"
+        version=$(curl -k -s $api_url | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v' '{print $2}')
         if [ -z "$version" ]; then
             failed "$get_version_failed_msg"
         fi
@@ -851,28 +915,51 @@ download_clash(){
     if [ "${current}" = "${version}" ]; then
         warn "$install_equal_versions_warn_msg"
     fi
+    clash_url="https://github.com/${clash_repo}/releases/download/v${version}/$(echo "$download_clash_name" | sed "s/:platform:/${platform}/g" | sed "s/:version:/${version}/g")"
+    download_name=$(get_download_filename "$clash_url")
+    temp_clash_path="${clash_dir}/${download_name}"
     # 下载clash
-    clash_temp_path="${clash_dir}/temp_clash"
-    clash_url="https://github.com/Dreamacro/clash/releases/download/${version}/clash-linux-${platform}-${version}.gz"
-    download "${clash_temp_path}.gz" "$clash_url" "Clash"
+    download "${temp_clash_path}" "$clash_url" "$download_name"
     echo "${install_start_msg} Clash"
     # 解压clash
-    mygunzip -f "${clash_temp_path}.gz"
+    temp_clash_dir="${clash_dir}/temp_clash"
+    decompression "$temp_clash_path" "$temp_clash_dir"
+    # 查找clash文件
+    find_result=$(find "$temp_clash_dir" -name 'clash' -print)
+    if [ -z "$find_result" ]; then
+        # 删除下载和解压缩的文件
+        myrm -rf "$temp_clash_path"
+        myrm -rf "$temp_clash_dir"
+        failed "${file_does_not_exist} clash"
+    fi
     # 重命名clash
-    mymv "${clash_temp_path}" "${clash_path}"
+    mymv "$find_result" "$clash_path"
+    # 删除下载的压缩文件
+    myrm -rf "$temp_clash_path"
+    # 删除解压的文件
+    myrm -rf "$temp_clash_dir"
     # 赋予运行权限
-    mychmod +x "${clash_path}"
+    mychmod +x "$clash_path"
     # 向clash配置文件写入当前版本
-    set_clashtool_config 'version' "${version}"
+    set_clashtool_config 'version' "$version"
+}
+
+clear(){
+    # 如果已安装则报错
+    if [ -f "$clash_path" ];then
+        failed "Clash $was_install_msg"
+    fi
+    # 如果存在残余则清零
+    if [ -d "$clash_dir" ];then
+        myrm -rf "$clash_dir"
+    fi
 }
 
 # 函数：安装clash内核
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 install() {
     version=$1
-    if [ -d $clash_dir ];then
-        failed "Clash $was_install_msg"
-    fi
+    clear
     # 检测安装依赖软件
     require
     # 创建服务脚本
@@ -937,7 +1024,7 @@ install_ui() {
     if [ "${ui_name}" = "dashboard" ]; then
         set_clashtool_config 'ui' "dashboard"
         ui_name="clash-dashboard-gh-pages"
-        url="https://github.com/Dreamacro/clash-dashboard/archive/refs/heads/gh-pages.zip"
+        url="https://github.com/${clash_repo}-dashboard/archive/refs/heads/gh-pages.zip"
     elif [ "${ui_name}" = "yacd" ]; then
         # 在clashtool配置文件中写入ui
         set_clashtool_config 'ui' "yacd"
@@ -946,15 +1033,25 @@ install_ui() {
     else
         failed "$install_ui_parameter_failed_msg"
     fi
-    download "${clash_dir}/gh-pages.zip" "$url" "${ui_name}"
-    
+    download_name="$(get_download_filename "$url")"
+    temp_clash_ui_path="${clash_dir}/${download_name}"
+    download "$temp_clash_ui_path" "$url" "$download_name"    
     echo "${install_start_msg} ClashUI"
     # 解压
-    myunzip -q -d "${clash_dir}" "${clash_dir}/gh-pages.zip"
+    temp_clash_ui_dir=${clash_dir}/temp_clash_ui
+    decompression "$temp_clash_ui_path" "$temp_clash_ui_dir"
+    find_result=$(find "$temp_clash_ui_dir" -type f -name "index.html" -print -quit)
+    if [ -z "$find_result" ]; then
+        # 删除已下载和解压的文件
+        myrm -rf "$temp_clash_ui_path"
+        myrm -rf "$temp_clash_ui_dir"
+        failed ""
+    fi
     # 重命名
-    mymv "${clash_dir}/${ui_name}" "$clash_ui_dir"
-    # 删除已下载文件
-    myrm -rf "${clash_dir}/gh-pages.zip"
+    mymv $(dirname "$find_result") "$clash_ui_dir"
+    # 删除已下载和解压的文件
+    myrm -rf "$temp_clash_ui_path"
+    myrm -rf "$temp_clash_ui_dir"
     # 设置ui配置
     set_yaml_value 'external-ui' "$clash_ui_dir" "$user_config_path"
     success "ClashUI $install_success_msg"
@@ -1359,8 +1456,10 @@ download_sub() {
         download "${temp_sub_path}" "${url}" "${name}" $sub_proxy
         # 检查订阅文件是否有效
         check_conf "$temp_sub_path"
-        # 备份原先订阅
-        mymv "${subscribe_dir}/${name}.yaml" "${subscribe_backup_dir}/${name}$(date +'%Y%m%d%H%M').yaml"
+        # 如果已存在则备份原先订阅
+        if [ -f "${subscribe_dir}/${name}.yaml" ];then
+            mymv "${subscribe_dir}/${name}.yaml" "${subscribe_backup_dir}/${name}$(date +'%Y%m%d%H%M').yaml"
+        fi
         # 重命名订阅文件
         mymv "${temp_sub_path}" "${subscribe_dir}/${name}.yaml"
     fi
@@ -1658,10 +1757,13 @@ main() {
             $fun "$var"
             ;;
         "uninstall"|"update"|"install_ui"|"uninstall_ui"|"update_ui"|"start"|"stop"|"restart"|"reload"|"add"|"list"|"del"|"update_sub"|"auto_update_sub"|"status"|"auto_start")
-            if [ ! -d $clash_dir ];then
+            if [ ! -f "$clash_path" ];then
                 failed $not_install_msg
             fi
             $fun "$var"
+            ;;
+        "clear")
+            clear
             ;;
         "proxy")
             failed "$proxy_not_source_command_msg" false

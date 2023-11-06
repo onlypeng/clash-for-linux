@@ -13,10 +13,10 @@
 &nbsp;&nbsp;&nbsp;&nbsp;clash_repo='Dreamacro/clash'<br>
 &nbsp;&nbsp;&nbsp;&nbsp;\# 使用中文提示输出语言<br>
 &nbsp;&nbsp;&nbsp;&nbsp;chinese=true<br>
-&nbsp;&nbsp;&nbsp;&nbsp;\# clash项目库
-&nbsp;&nbsp;&nbsp;&nbsp;clash_repo='doreamon-design/clash'
-&nbsp;&nbsp;&nbsp;&nbsp;\# clash releases名称规则  变量 版本 :version: 架构 :platform:
-&nbsp;&nbsp;&nbsp;&nbsp;download_clash_name='clash_:version:_linux_:platform:.tar.gz'
+&nbsp;&nbsp;&nbsp;&nbsp;\# clash项目库<br>
+&nbsp;&nbsp;&nbsp;&nbsp;clash_repo='doreamon-design/clash'<br>
+&nbsp;&nbsp;&nbsp;&nbsp;\# clash releases名称规则  变量 版本 :version: 架构 :platform:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;download_clash_name='clash_:version:_linux_:platform:.tar.gz'<br>
 &nbsp;&nbsp;&nbsp;&nbsp;\# github下载代理地址<br>
 &nbsp;&nbsp;&nbsp;&nbsp;\# 订阅使用github代理下载<br>
 &nbsp;&nbsp;&nbsp;&nbsp;sub_proxy=false<br>

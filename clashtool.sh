@@ -146,7 +146,7 @@ help_msg="
     add              SubscriptionInfo                     Add or modify subscription info (format: 'SubscriptionName::SubscriptionURL(LocalFilePath)::UpdateInterval(hours, can be empty)').
     del              SubscriptionName                     Delete a subscription.
     update_sub       SubscriptionName or all  Optional    Update the subscription file (defaults to the current subscription); 'all' updates all subscriptions (excluding subscriptions).
-    auto_update_sub  true or false                        Turn automatic update subscription on or off
+    auto_update_sub  true or false                        Turn automatic update subscription on or off.
     list             None                     Optional    List all subscription information.
     auto_start       true or false            Optional    Enable or disable auto-start on boot (defaults to true).
     status           None                     Optional    View Clash-related information.

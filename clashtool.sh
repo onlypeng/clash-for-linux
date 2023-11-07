@@ -1,5 +1,5 @@
 #!/bin/sh
-# version:1.0.2
+# version:1.0.3
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -9,13 +9,13 @@ platform=''
 chinese=true
 # clash项目库
 clash_repo='doreamon-design/clash'
-# clash releases名称规则  变量 版本 :version: 架构 :platform:
+# clash releases名称规则  可用变量 版本 :version: 架构 :platform:
 download_clash_name='clash_:version:_linux_:platform:.tar.gz'
 # 下在错误重试次数
 max_retries=3
 # 订阅使用github代理下载
 sub_proxy=false
-# github下载代理地址，clash和ui的下载使用该代理,最后携带/
+# github下载代理地址，clash和ui下载默认使用该代理,地址最后携带/
 github_proxy="https://gh.ylpproxy.eu.org/"
 # 设置代理的环境变量
 proxy_keys="http https ftp socks"
@@ -710,7 +710,7 @@ decompression() {
 
     # 检测输出目录，不存在则创建
     if [ ! -d "$destination" ]; then
-        mymkdir "$destination"
+        mymkdir -p "$destination"
     fi
 
     # 使用 case 语句来匹配文件后缀
@@ -727,15 +727,15 @@ decompression() {
         *.zip)
             ${mysudo}unzip -q "$archive_file" -d "$destination"
             ;;
-        *.rar)
-            ${mysudo}unrar x "$archive_file" "$destination"
-            ;;
-        *.7z)
-            ${mysudo}7z x "$archive_file" -o"$destination"
-            ;;
-        *.bz2)
-            ${mysudo}bunzip2 -k -c "$archive_file" > "$destination/$(basename "$archive_file" .bz2)"
-            ;;
+        # *.rar)
+        #     ${mysudo}unrar x "$archive_file" "$destination"
+        #     ;;
+        # *.7z)
+        #     ${mysudo}7z x "$archive_file" -o"$destination"
+        #     ;;
+        # *.bz2)
+        #     ${mysudo}bunzip2 -k -c "$archive_file" > "$destination/$(basename "$archive_file" .bz2)"
+        #     ;;
         *)
             echo "Unsupported archive format: $archive_file"
             return 1
@@ -806,13 +806,13 @@ init_config() {
     # 创建clash目录
     mymkdir -p "${clash_dir}"
     # 创建配置目录
-    mymkdir "${config_dir}"
+    mymkdir -p "${config_dir}"
     # 创建logs目录
-    mymkdir "${logs_dir}"
+    mymkdir -p "${logs_dir}"
     # 创建subscribe配置目录
-    mymkdir "${subscribe_dir}"
+    mymkdir -p "${subscribe_dir}"
     # 创建subscribe_backup_dir目录
-    mymkdir "${subscribe_backup_dir}"
+    mymkdir -p "${subscribe_backup_dir}"
     # 创建clashtool和订阅配置文件
     {   
         echo "[clashtool]"

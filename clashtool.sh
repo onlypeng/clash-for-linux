@@ -1,5 +1,5 @@
 #!/bin/sh  
-# version:1.1.0
+# version:1.1.1
 # 网页初始链接密码，不填写则随机生成
 secret=''
 # clash架构，默认自动获取，获取失败请自行填写
@@ -1167,6 +1167,7 @@ update_script(){
     fi
     download "${current_path}.temp" "$url" "Script"
     cp "${current_path}.temp" $current_path
+    chmod 755 $current_path
     if [ -d $clash_dir ];then
         cp "${current_path}.temp" $script_path
     fi
@@ -2052,7 +2053,7 @@ menu() {
                     read -p "$prompt_subscription_url_msg" input
                     var="${var}::${input}"
                     read -p "$prompt_subscription_update_msg" input
-                    [ -z "$input" ] && var="${var}::${input}"
+                    [ -n "$input" ] && var="${var}::${input}"
                     $0 add "$var"
                     ;;
                 3) 

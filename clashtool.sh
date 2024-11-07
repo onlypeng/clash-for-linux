@@ -1049,8 +1049,13 @@ uninstall() {
     fi
     # 删除服务脚本
     del_service_file
+
     # 删除Clash所有相关文件
-    rm -rf "${clash_dir}"
+    if [ $1="all" ];then
+        rm -rf "${clash_dir}"
+    else
+        rm "$clash_path"
+    fi
     success "Clash $uninstall_success_msg"
 }
 
@@ -1895,84 +1900,6 @@ clashtool() {
         failed $confg_key_error_msg
     fi
     set_clashtool_config "$key" "$val"
-}
-#!/bin/sh
-
-# 检测系统网口，分辨 WAN 和 LAN
-detect_interfaces() {
-    interfaces=$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^e' | tr '\n' ' ')
-    iface_count=$(echo "$interfaces" | wc -w)
-    
-    if [ "$iface_count" -eq 1 ]; then
-        echo "$interfaces"
-    elif [ "$iface_count" -gt 1 ]; then
-        for iface in $interfaces; do
-            if ip addr show "$iface" | grep -q "inet "; then
-                wan_iface="$iface"
-            else
-                lan_iface="$iface"
-            fi
-        done
-        echo "$wan_iface $lan_iface"
-    else
-        echo "No network interfaces detected."
-        exit 1
-    fi
-}
-
-# 启用网关并配置 Clash 代理
-enable_clash_gateway() {
-    # 检测并分辨 WAN 和 LAN 接口
-    detected_interfaces=$(detect_interfaces)
-    wan_iface=$(echo "$detected_interfaces" | awk '{print $1}')
-    lan_iface=$(echo "$detected_interfaces" | awk '{print $2}')
-
-    # 启用 IP 转发
-    if ! grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf; then
-        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
-    fi
-    sysctl -w net.ipv4.ip_forward=1
-    # 设置 iptables NAT 和端口转发规则
-    echo "配置 iptables NAT 转发规则..."
-    iptables -t nat -A POSTROUTING -o "$wan_iface" -j MASQUERADE
-    iptables -t nat -A PREROUTING -i "$lan_iface" -p tcp --dport 80 -j REDIRECT --to-ports 7890
-    iptables -t nat -A PREROUTING -i "$lan_iface" -p tcp --dport 443 -j REDIRECT --to-ports 7890
-    iptables -t nat -A PREROUTING -i "$lan_iface" -p tcp --dport 1080 -j REDIRECT --to-ports 7891
-
-    # 保存 iptables 规则（可选，确保重启后规则生效）
-    if command -v netfilter-persistent >/dev/null 2>&1; then
-        netfilter-persistent save
-    fi
-
-    echo "Clash 网关设置完成，代理已启用。"
-}
-
-# 关闭网关并清除 Clash 代理规则
-disable_clash_gateway() {
-    # 检测并分辨 WAN 和 LAN 接口
-    detected_interfaces=$(detect_interfaces)
-    wan_iface=$(echo "$detected_interfaces" | awk '{print $1}')
-    lan_iface=$(echo "$detected_interfaces" | awk '{print $2}')
-
-    # 禁用 IP 转发
-    if grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf; then
-        sed -i 's/net.ipv4.ip_forward=1/net.ipv4.ip_forward=0/' /etc/sysctl.conf
-        sysctl -w net.ipv4.ip_forward=0
-    fi
-
-    # 清除 iptables NAT 和代理转发规则
-    echo "清除 iptables NAT 转发规则..."
-    iptables -t nat -D POSTROUTING -o "$wan_iface" -j MASQUERADE 2>/dev/null
-    iptables -t nat -D PREROUTING -i "$lan_iface" -p tcp --dport 80 -j REDIRECT --to-ports 7890 2>/dev/null
-    iptables -t nat -D PREROUTING -i "$lan_iface" -p tcp --dport 443 -j REDIRECT --to-ports 7890 2>/dev/null
-    iptables -t nat -D PREROUTING -i "$lan_iface" -p tcp --dport 1080 -j REDIRECT --to-ports 7891 2>/dev/null
-
-    # 保存清除后的规则
-    if command -v netfilter-persistent >/dev/null 2>&1; then
-        netfilter-persistent save
-    fi
-
-    echo "网关已关闭，Clash 代理设置已清除。"
 }
 
 # 定义菜单函数

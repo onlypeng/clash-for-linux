@@ -1812,7 +1812,7 @@ auto_start() {
         # 
         case "$linux_distribution" in
             "alpine")
-                rcupdate add "$service_name" default
+                rc-update add "$service_name" default
                 ;;
             "centos" | "redhat" | "ubuntu" | "debian" | "kylin" | "deepin")
                 systemctl enable "$service_name" >/dev/null 2>&1
@@ -1824,7 +1824,7 @@ auto_start() {
     else
         case "$linux_distribution" in
             "alpine")
-                rcupdate del $service_name default
+                rc-update del $service_name default
                 ;;
             "centos" | "redhat" | "ubuntu" | "debian" | "kylin" | "deepin")
                 systemctl disable $service_name >/dev/null 2>&1

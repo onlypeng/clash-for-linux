@@ -1,4 +1,4 @@
-1.2.0添加设置本机为网关功能，修复重新安装时无法保留配置问题，修复设置自动开机时无法通过该脚本关闭问题<br>
+1.2.0添加设置本机为网关功能，修复部分bug(由于更新功能，需手动更新配置文件，请手动运行clashtool.sh update_config)<br>
 1.1.1修复卸载参数all无效bug,删除测试网关设置相关代码<br>
 1.1.0添加选择操作菜单，修复部分bug,切换测试用Clahs库，切换dashboard UI库。<br>
 1.0.3更新注解，屏蔽部分压缩文件格式解压，此版本不涉及功能更改，可不更新。<br>
@@ -6,7 +6,7 @@
 1.0.1本次升级由于更换相关安装和存放位置，需完全卸载以前版本，记得保存以前代理地址或文件。<br>
 
 功能：<br>
- 安装Clash、卸载Clash、 更新Clash、 安装webUI界面、卸载webUI界面、 更新或更换webUI界面、更新当前脚本、启动Clash、 停止Clash、 重启Clash、 重载Clash配置、 添加订阅、 删除订阅、 更新订阅(可自动更新)、 查询所有订阅、 开机自启动(已测试alpine、centos、Ubuntu、debian)、 查当前运行Clash相关信息、 启用或禁用本机代理、启用和禁用本地网关功能<br>
+ 安装Clash、卸载Clash、更新Clash、安装webUI界面、卸载webUI界面、更新或更换webUI界面、更新当前脚本、启动Clash、停止Clash、重启Clash、重载Clash配置、添加订阅、删除订阅、更新订阅(可自动更新)、查询所有订阅、开机自启动(已测试alpine、centos、Ubuntu、debian)、查当前运行Clash相关信息、启用或禁用本机代理、启用和禁用本地网关功能<br>
 <br>
 #脚本可自定义编辑参数<br>
 &nbsp;&nbsp;&nbsp;&nbsp;# 网页初始链接密码，不填写则随机生成<br>
@@ -35,7 +35,7 @@
 &nbsp;&nbsp;&nbsp;&nbsp;proxy_keys="http https ftp socks"<br>
 &nbsp;&nbsp;&nbsp;&nbsp;proxy_no="localhost,127.0.0.1,::1"<br>
 <br>
-用户更改clash用户配置文件《位置：vi /opt/clash/config/config.yaml》 ，该配置为clash启动时默认加载配置，订阅配置通过clash重载方式加载<br>
+用户更改clash用户配置文件《位置：vi /opt/clash/config/user.yaml》 ，Clash启动和重载使用的配置为用户配置与订阅配置合并生成的临时配置文件<br>
 <br>
 
 配合这些软件食用效果更佳<br>

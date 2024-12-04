@@ -989,6 +989,10 @@ EOF
 
 # 函数：根新配置
 update_config(){
+    # 备份用户配置文件
+    cp -r $config_dir "${config_dir}.bak"
+    # 重命名用户文件
+    mv $config_path "$user_config_path"
     # 重新初始化文件，补全缺少的网关配置
     init_config
     # 更改clashtool脚本部分配置文件
@@ -1283,9 +1287,11 @@ update_script(){
     fi
     download "${current_path}.temp" "$url" "Script"
         cp "${current_path}.temp" $current_path
+        chmod 755 $current_path
     chmod 755 $current_path
     if [ -d $clash_dir ];then
         cp "${current_path}.temp" $script_path
+        chmod 755 $script_path
         # 升级配置相关文件
         sh $script_path update_config
     fi

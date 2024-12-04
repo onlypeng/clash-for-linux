@@ -1,5 +1,6 @@
 #!/bin/sh  
-# version:1.1.1
+# version:1.2.0
+
 # 网页初始链接密码，不填写则随机生成
 secret=''
 # clash架构，默认自动获取，获取失败请自行填写
@@ -52,8 +53,14 @@ fi
 clash_path="${clash_dir}/clash"
 # clash配置文件
 config_path="${config_dir}/config.yaml"
+# 用户自定义配置文件
+user_config_path="${config_dir}/user.yaml"
+# clash tun模式使用的配置文件
+gateway_config_path="${config_dir}/gateway.yaml"
 # clashtool 配置文件
 clashtool_config_path="${config_dir}/clashtool.ini"
+# clash配置文件支持的多有变量
+clash_config_keys="port socks-port redir-port tproxy-port mixed-port authentication allow-lan bind-address mode log-level ipv6 unified-delay external-controller global-client-fingerprint external-ui secret interface-name routing-mark hosts profile dns tun proxies proxy-groups proxy-providers tunnels rules"
 
 # 保存当前clash程序运行状态
 pid=$(pgrep -f "^$clash_path -d ${config_dir}$")
@@ -72,7 +79,8 @@ menu_main_option5="5. Clash Auto Start Settings"
 menu_main_option6="6. Display Clash Information"
 menu_main_option7="7. Update Current Clash Tool Script"
 menu_main_option8="8. Proxy Settings, currently only supported via command"
-menu_main_option9="9. Display Available Commands for Clash Tool"
+menu_main_option9="9. Gateway Settings"
+menu_main_help="9. Display Available Commands for Clash Tool"
 menu_core="========= Clash Core Functions ========="
 menu_core_option1="1. Install Clash Core"
 menu_core_option2="2. Update Clash Core"
@@ -99,13 +107,14 @@ menu_running_option4="4. Restart Clash"
 menu_autostart="=============== Auto Start Options ==============="
 menu_autostart_option1="1. Enable Auto Start"
 menu_autostart_option2="2. Disable Auto Start"
+menu_gateway="================= Gateway Options ================="
+menu_gateway_option1="1. Enable Gateway"
+menu_gateway_option2="2. Disable Gateway"
 menu_return="r. Return to Previous Menu"
 menu_exit="q. Exit"
 menu_end="==================================="
 menu_invalid_choice="Invalid choice!"
 
-
-# 英文提示文字开始——ChatGPT翻译，给不支持中文的linux系统使用
 # Prompt messages
 prompt_choice_msg="Please choose an option (enter the number):"
 prompt_version_msg="Enter the version number (default is the latest version):"
@@ -128,6 +137,7 @@ require_check_msg="Checking for dependencies"
 require_install_failed_msg="Unable to recognize the package manager. Please install it manually."
 init_config_start_msg="Initializing configuration file"
 init_config_success_msg="Configuration file initialized successfully"
+migrate_config_success_msg="Configuration file migrated successfully"
 download_start_msg="Starting download"
 download_waiting_msg="Download failed. Waiting 5 seconds before the next attempt..."
 download_success_msg="Download successful"
@@ -168,6 +178,7 @@ status_sub_name_msg="Current subscription file:"
 status_auto_start_msg="Auto-start on boot:"
 status_clash_path_msg="Clash installation path:"
 status_proxy_msg="proxy status:"
+status_gateway_msg="gateway status:"
 status_clash_address_msg="Clash access address:"
 status_clash_secret_msg="Clash access token:"
 status_clash_ui_address_msg="ClashUI access address:"
@@ -180,6 +191,9 @@ proxy_source_command_msg="Do not use source to execute commands other than 'prox
 proxy_not_source_command_msg="Please use source to execute the 'proxy' command."
 proxy_on_success_msg="Proxy enabled"
 proxy_off_success_msg="Proxy disabled"
+gateway_enable_success_msg="Gateway enabled success"
+gateway_disable_success_msg="Gateway disabled success"
+gateway_set_failed_msg="Gateway set failed"
 confg_key_error_msg="Variable does not exist"
 
 help_msg="
@@ -203,9 +217,8 @@ help_msg="
     auto_start       true or false            Optional    Enable or disable auto-start on boot (defaults to true).
     status           None                     Optional    View Clash-related information.
     proxy            true or false            Optional    Enable or disable proxy (defaults to true); this command must be executed using 'source'.
-    "
+    gateway          true or false            Optional    Enable or disable gateway (defaults to true)."
 main_msg="Invalid command. Type 'help' to view available commands."
-# 英文提示文字结束
 
 # 函数：中文提示函数
 chinese_language(){
@@ -219,7 +232,8 @@ chinese_language(){
     menu_main_option6="6.显示Clash相关信息"
     menu_main_option7="7.更新当前Clash工具脚本"
     menu_main_option8="8.代理设置，目前只支持命令设置"
-    menu_main_option9="9.显示clash工具命令方式可使用的命令"
+    menu_main_option9="9.网关设置相功能"
+    menu_main_help="h.显示clash工具命令方式可使用的命令"
     menu_core="========= Clash核心相关功能 ========="
     menu_core_option1="1. 安装Clash核心"
     menu_core_option2="2. 更新Clash核心"
@@ -246,6 +260,10 @@ chinese_language(){
     menu_autostart="=============== 开机自启动选项 ==============="
     menu_autostart_option1="1. 启动开机自起"
     menu_autostart_option2="2. 关闭开机自起"
+    menu_end="==================================="
+    menu_gateway="================= 网关选项 ================="
+    menu_gateway_option1="1. 启动网关"
+    menu_gateway_option2="2. 禁用网关"
     menu_return="r. 返回上级"
     menu_exit="q.退出"
     menu_end="==================================="
@@ -277,6 +295,7 @@ chinese_language(){
     require_install_failed_msg="无法识别包管理器，请自行安装"
     init_config_start_msg="初始化配置文件"
     init_config_success_msg="配置文件初始化成功"
+    migrate_config_success_msg="配置文件迁移成功"
     download_start_msg="开始下载"
     download_waiting_msg="下载失败，等待5秒后进行下一次尝试..."
     download_success_msg="下载成功"
@@ -314,6 +333,7 @@ chinese_language(){
     status_auto_start_msg="开机自动启动："
     status_clash_path_msg="Clash安装路径："
     status_proxy_msg="本机代理状态："
+    status_gateway_msg="本机网关状态："
     status_clash_address_msg="Clash访问地址："
     status_clash_secret_msg="Clash访问令牌："
     status_clash_ui_address_msg="ClashUI访问地址："
@@ -326,6 +346,9 @@ chinese_language(){
     proxy_not_source_command_msg="请使用source执行proxy命令"
     proxy_on_success_msg="代理已开启"
     proxy_off_success_msg="代理已关闭"
+    gateway_enable_success_msg="网关启用成功"
+    gateway_disable_success_msg="网关禁用成功"
+    gateway_set_failed_msg="网关设置失败"
     confg_key_error_msg="变量不存在"
     help_msg="
       命令                   参数                         备注
@@ -347,7 +370,8 @@ chinese_language(){
     list            空                          查询所有订阅信息
     auto_start      true或false      可为空     启用或禁用开机自启动功能，默认为true
     status          空                          查看Clash相关信息
-    proxy           true或false      可为空     启用或禁用本机代理，默认为true，此命令需要使用source运行"
+    proxy           true或false      可为空     启用或禁用本机代理，默认为true，此命令需要使用source运行
+    gateway         true或false      可为空     启用或禁用网关，默认为true"
     main_msg="无效命令，相关命令输入help进行查看"
 }
 
@@ -368,40 +392,36 @@ section_exists() {
 #   $2: key - 变量名
 #   $3: value - 值
 #   $4: file - 文件名
-write_ini() {
+update_ini() {
     section=$1
     key=$2
     value=$3
     file=$4
+    temp_file=$(mktemp)
+    awk -v section="$section" -v key="$key" -v value="$value" '
+    BEGIN { in_section = 0; key_written = 0 }
+    /^\s*\[.*\]/ {
+        if (in_section && !key_written) {
+            print key "=" value
+            key_written = 1
+        }
+        in_section = ($0 == "[" section "]")
+    }
+    in_section && $1 ~ key"=" {
+        $0 = key "=" value
+        key_written = 1
+    }
+    { print }
+    END {
+        if (!key_written && in_section) {
+            print key "=" value
+        } else if (!key_written) {
+            print "[" section "]"
+            print key "=" value
+        }
+    }' "$file" > "$temp_file"
 
-    # 判断指定节是否存在
-    if section_exists "$file" "$section"; then
-        temp_ini_path="${config_dir}/temp.ini"
-        awk -F "=" -v section="$section" -v key="$key" -v value="$value" '
-            $0 ~ /^\[.*\]$/ { in_section=($0 == "["section"]") }  # 进入指定节
-            in_section && $1 == key {  # 在指定节中找到指定键
-                $0=key"="value  # 修改键的值
-                found=1
-            }
-            { print $0 }  # 输出每一行
-            END {
-                if (found != 1) {
-                    print key"="value  # 在节中找不到键时添加新键值对
-                }
-            }
-        ' "$file" > $temp_ini_path
-            
-        # 移动临时文件到目标文件
-        if [ $? -eq 0 ]; then
-            mv $temp_ini_path "$file"
-        fi
-    else
-        # 如果节不存在，则添加新节和键值对
-        {
-            echo "[$section]"
-            echo "$key=$value"
-        } >> "$file"
-    fi
+    mv "$temp_file" "$file"
 }
 
 # 函数：删除INI配置项或指定节
@@ -413,17 +433,18 @@ delete_ini() {
     section=$1
     key=$2
     file=$3
+    temp_file=$(mktemp)
 
-    # 判断指定节是否存在
-    if section_exists "$file" "$section"; then
-        if [ -z "$key" ]; then
-            # 删除整个节，包括下一个节的空行
-            sed -i "/^\[$section\]/,/^\[/ { /^\[$section\]/d; /^\[/!d; }" "$file"
-        else
-            # 删除指定节下的指定键的配置项
-            sed -i "/^\[$section\]/,/^\[/ { /^$key=/d; }" "$file"
-        fi
-    fi
+    awk -v section="$section" -v key="$key" '
+    BEGIN { in_section = 0 }
+    /^\s*\[.*\]/ { 
+        in_section = ($0 == "[" section "]")
+    }
+    !(in_section && $1 ~ key"=") {
+        print
+    }' "$file" > "$temp_file"
+
+    mv "$temp_file" "$file"
 }
 
 # 函数：获取INI配置文件
@@ -431,45 +452,40 @@ delete_ini() {
 #   $1: file - 文件名
 #   $2: section - 指定节
 #   $3: key - 变量名
-read_ini() {
+find_ini() {
     section=$1
     key=$2
     file=$3
-
-    # 判断指定节是否存在
-    if section_exists "$file" "$section"; then
-        # 使用 awk 解析配置文件
-        awk -F "=" -v section="$section" -v key="$key" '
-            $0 ~ /^\[.*\]$/ { in_section=($0 == "["section"]") }
-            in_section && $1 == key {
-                print $2
-                found=1
-                exit
-            }
-            END {
-                if (found != 1) {
-                    exit 1
-                }
-            }
-        ' "$file" || echo ""
-    fi
+    awk -v section="$section" -v key="$key" '
+    BEGIN { in_section = 0 }
+    /^\s*\[.*\]/ { 
+        in_section = ($0 == "[" section "]") 
+    }
+    in_section && $1 ~ key"=" {
+        gsub(/^[ \t]+|[ \t]+$/, "", $0) # 去掉前后空格
+        split($0, kv, "=")
+        if (kv[1] == key) {
+            print kv[2]
+            exit
+        }
+    }' "$file"
 }
 
 # 函数：获取clashtool配置
 # 参数：$1: key - 变量名
-get_clashtool_config() {
+find_clashtool_config() {
     key=$1
-    read_ini 'clashtool' "${key}" "${clashtool_config_path}"
+    find_ini 'clashtool' "${key}" "${clashtool_config_path}"
 }
 
 # 函数：添加或更改clashtool配置文件
 # 参数：
 #   $1: key - 变量名
 #   $2: val - 值
-set_clashtool_config() {
+update_clashtool_config() {
     key=$1
     val=$2
-    write_ini "clashtool" "${key}" "${val}" "${clashtool_config_path}"
+    update_ini "clashtool" "${key}" "${val}" "${clashtool_config_path}"
 }
 
 # 函数：判断订阅是否存在
@@ -485,7 +501,7 @@ existence_subscrib_config() {
 #   $1: sec_name - 订阅名称
 #   $2: key - 订阅地址
 #   $3：val - 更新间隔时间
-set_subscribe_config() {
+update_subscribe_config() {
     sec_name=$1
     key=$2
     val=$3
@@ -494,7 +510,7 @@ set_subscribe_config() {
     else
         sec="subscribe_$sec_name"
     fi
-    write_ini "$sec" "$key" "$val" "$clashtool_config_path"
+    update_ini "$sec" "$key" "$val" "$clashtool_config_path"
 }
 
 # 函数：添加订阅配置
@@ -512,17 +528,17 @@ add_subscribe_config() {
         echo "interval=$interval"
     } >> "$clashtool_config_path"
     # 更新names名称
-    names=$(get_subscribe_config '' 'names')${name}','
-    set_subscribe_config '' 'names' "${names}"
+    names=$(find_subscribe_config '' 'names')${name}','
+    update_subscribe_config '' 'names' "${names}"
 }
 
 # 函数：删除订阅
 # 参数：$1: name - 订阅名称
-del_subscribe_config() {
+delete_subscribe_config() {
     name=$1
     # 更新names
-    names=$(get_subscribe_config '' 'names' | sed "s/${name},//g")
-    set_subscribe_config '' 'names' "$names"
+    names=$(find_subscribe_config '' 'names' | sed "s/${name},//g")
+    update_subscribe_config '' 'names' "$names"
     # 删除订阅节点
     delete_ini "subscribe_$name" '' "${clashtool_config_path}"
 }
@@ -532,7 +548,7 @@ del_subscribe_config() {
 # 参数：
 #   $1: name - 订阅名称
 #   $2: key - 变量名
-get_subscribe_config() {
+find_subscribe_config() {
     name=$1
     key=$2
     if [ -z "${name}" ]; then
@@ -540,43 +556,64 @@ get_subscribe_config() {
     else
         sec="subscribe_${name}"
     fi
-    read_ini "${sec}" "${key}" "${clashtool_config_path}"
+    find_ini "${sec}" "${key}" "${clashtool_config_path}"
 }
-# 函数：获取yaml配置,只能简单的读取单行key: value
+
+# 函数：获取用户Clash配置
 # 参数：
 #   $1: key - 订阅名称
 #   $2: file - 订阅文件
-get_yaml_value() {
+find_clash_config(){
     key="$1"
-    file="$2"
-
-    # 使用sed读取key对应的value
-    sed -n "/^ *$key:/s/^ *$key:[[:space:]]*//p" "$file"
+    sed -n "/^${key}:/,/^[[:alnum:]]/{s/^${key}:[[:space:]]\{0,1\}//p;t end;/^[[:alnum:]]/!p;:end}" "$user_config_path"
 }
 
-# 函数：设置yaml配置,只能简单的读取单行key: value
+# 函数：添加或修改用户Clash配置
 # 参数：
 #   $1: key - 订阅名称
 #   $2: val - 订阅值
-#   $3: file - 订阅文件
-set_yaml_value() {
+update_clash_config() {
     key="$1"
-    val="$2"
-    file="$3"
-    temp_yaml_path="${config_dir}/temp.yaml"
-    # 使用awk进行YAML文件的编辑
-    awk -v key="$key" -v value="$val" '{
-        if ($1 ~ "^ *" key ":") {
-            print key ":", value
-        } else {
-            print $0
-        }
-    }' "$file" > $temp_yaml_path
+    value="$2"
+    temp_file="$(mktemp)"
+    for temp_key in $clash_config_keys; do
+        if [ "$temp_key" = "$key" ] && [ -n "$value" ]; then
+            # 如果新值不为空，则更新临时文件中的值
+            echo "${temp_key}: ${value}" >> "$temp_file"
+        elif grep -Eq "^${temp_key}:" "$user_config_path"; then
+            # 如果原文件存在则把相关信息复制到临时文件
+            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $user_config_path >> "$temp_file"
+        fi
+    done
+    check_conf "$temp_file"
+    mv "$temp_file" "$user_config_path"
+}
 
-    # 检查temp.yaml是否成功创建
-    if [ $? -eq 0 ]; then
-        mv $temp_yaml_path "$file"
-    fi
+# 函数：删除用户Clash配置
+# 参数：
+#   $1: key - 订阅名称
+delete_clash_config() {
+    key="$1"
+    # 使用 sed 删除键的范围，不包括终点行
+    sed -i "/^${key}:/,/^[[:alnum:]]/{/^${key}:/d;/^[[:alnum:]]/!d}" "$user_config_path"
+}
+
+# 函数：合并用户和订阅的Clash配置
+merge_clash_config() {
+    sub_config_path="$1"
+    gateway_status=$(find_clashtool_config "gateway")
+    temp_file="$(mktemp)"
+    for temp_key in $clash_config_keys; do
+        if grep -Eq "^${temp_key}:" "$user_config_path"; then
+            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $user_config_path >> "$temp_file"
+        elif [ "$gateway_status" = "true" ] && grep -Eq "^${temp_key}:" "$gateway_config_path"; then
+            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $gateway_config_path >> "$temp_file"
+        elif grep -Eq "^${temp_key}:" "$sub_config_path"; then
+            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $sub_config_path >> "$temp_file"
+        fi
+    done
+    check_conf "$temp_file"
+    mv "$temp_file" "$config_path" 
 }
 
 # 通用消息函数
@@ -586,10 +623,10 @@ set_yaml_value() {
 #   $3: msg - 消息
 #   $4: is_exit - 是否退出脚本 (true/false)，默认 false
 message() {
-    local color_code="$1"
-    local status="$2"
-    local msg="$3"
-    local is_exit="${4:-false}"
+    color_code="$1"
+    status="$2"
+    msg="$3"
+    is_exit="${4:-false}"
     # 使用 printf 格式化输出：状态码 消息，设置符号和对齐
     printf "\033[1;${color_code}m[%s]\033[0m %-60s\n" "$status" "$msg"
     $is_exit && exit 0
@@ -613,7 +650,7 @@ normal() { message "0" "INFO" "$1" "${2:-false}"; }
 # 函数：输出UI链接相关信息
 clash_ui_link_info(){
     ips=$(ip -o -4 addr show | awk '!/127.0.0.1/ {print $4}' | cut -d'/' -f1)
-    port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
+    port=$(find_clash_config "external-controller" | awk -F ':' '{print $2}')
     echo "$status_clash_address_msg"
     for ip in $ips; do
         echo "    http://$ip:${port}"
@@ -676,15 +713,11 @@ is_sourced() {
 
 # 函数：获取下载文件名称
 get_download_filename() {
-    local url="$1"
-    local filename
-
+    url="$1"
     # 尝试从URL中提取文件名
     filename=$(basename "$url")
-
     # 如果无法从URL中提取文件名，则获取文件头信息
     if [ -z "$filename" ]; then
-        local headers
         headers=$(curl -sI "$url")
         filename=$(echo "$headers" | grep -i 'Content-Disposition' | sed -e 's/.*filename=//')
         filename="${filename%\"}"
@@ -753,10 +786,10 @@ install_procedure(){
 
 # 函数：解压常用压缩文件到指定目录
 decompression() {
-    local archive_file="$1"
-    local destination="$2"
+    archive_file="$1"
+    destination="$2"
 
-    # 检测输出目录，不存在则创建
+    # 检测输出目录，不存在则创建ss
     if [ ! -d "$destination" ]; then
         mkdir -p "$destination"
     fi
@@ -850,56 +883,127 @@ require() {
 # 函数：初始化配置
 init_config() {
     normal "$init_config_start_msg"
-    # 创建clash目录
-    mkdir -p "${clash_dir}"
-    # 创建配置目录
-    mkdir -p "${config_dir}"
-    # 创建logs目录
-    mkdir -p "${logs_dir}"
-    # 创建subscribe配置目录
-    mkdir -p "${subscribe_dir}"
-    # 创建subscribe_backup_dir目录
-    mkdir -p "${subscribe_backup_dir}"
-    # 创建clashtool和订阅配置文件
-    {   
-        echo "[clashtool]"
-        echo "ui=dashboard"
-        echo "version="
-        echo "autoStart=false"
-        echo "autoUpdateSub=true"
-        echo "httpPort=7890"
-        echo "socksPort=7891"
-        echo ""
-        echo "[subscribe]"
-        echo "names="
-        echo "use=default"
-    } > "${clashtool_config_path}"
-    # 未自定义网页密码则产生随机密码
-    if [ -z "$secret" ];then
-        secret=$(tr -dc a-zA-Z0-9#@ 2>/dev/null < /dev/urandom | head -c 12)
+    
+    # 检查并创建 clash 目录
+    if [ ! -d $clash_dir ]; then
+        mkdir -p "${clash_dir}"
     fi
-    # 创建默认clash配置文件
-    {
-        echo "port: 7890"
-        echo "socks-port: 7891"
-        echo "allow-lan: true"
-        echo "mode: Rule"
-        echo "log-level: error"
-        echo "external-controller: 0.0.0.0:9090"
-        echo "external-ui: "
-        echo "secret: ${secret}"
-    } > "${config_path}"
-    # 手动下载Country.mmdb文件，防止clash无法初始化配置文件
-    # 获取最新版本Country.mmdb
-    api_url="https://api.github.com/repos/Dreamacro/maxmind-geoip/releases/latest"
-    country_version=$(curl -k -s $api_url | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v' '{print $2}')
-    # 获取版本是失败则使用默认版本
-    country_version=${country_version:-"20241012"}
-    # 开始下载
-    download "${config_dir}/Country.mmdb" "https://github.com/Dreamacro/maxmind-geoip/releases/download/${country_version}/Country.mmdb" "Country.mmdb" true
-
+    
+    # 检查并创建配置目录
+    if [ ! -d $config_dir ]; then
+        mkdir -p "${config_dir}"
+    fi
+    
+    # 检查并创建 logs 目录
+    if [ ! -d $logs_dir ]; then
+        mkdir -p "${logs_dir}"
+    fi
+    
+    # 检查并创建 subscribe 配置目录
+    if [ ! -d $subscribe_dir ]; then
+        mkdir -p "${subscribe_dir}"
+    fi
+    
+    # 检查并创建 subscribe_backup_dir 目录
+    if [ ! -d $subscribe_backup_dir ]; then
+        mkdir -p "${subscribe_backup_dir}"
+    fi
+    
+    # 检查并创建 clashtool 配置文件
+    if [ ! -f $clashtool_config_path ]; then
+        cat <<EOF > "${clashtool_config_path}"
+[clashtool]
+ui=dashboard
+version=
+gateway=false
+auto_start=false
+auto_update_sub=true
+http_port=7890
+socks_port=7891
+[subscribe]
+names=
+use=default
+EOF
+    fi
+    
+    # 检查并创建默认用户自定义的 clash 配置文件
+    if [ ! -f $user_config_path ]; then
+        # 未自定义网页密码则产生随机密码
+        if [ -z "$secret" ]; then
+            secret=$(tr -dc a-zA-Z0-9#@ 2>/dev/null < /dev/urandom | head -c 12)
+        fi
+        cat <<EOF > "${user_config_path}"
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: Rule
+log-level: error
+external-controller: 0.0.0.0:9090
+secret: ${secret}
+EOF
+    fi
+    # 检查并创建默认tun模式的clash 配置文件
+    if [ ! -f $gateway_config_path ]; then
+        cat <<EOF > "${gateway_config_path}"
+tun:
+  enable: true
+  stack: system
+  dns-hijack:
+    - any:53
+  auto-route: true
+  # auto-redir: true
+  auto-detect-interface: true
+dns:
+  enable: true
+  listen: :53
+  ipv6: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  default-nameserver: 
+    - 223.5.5.5
+    - 114.114.114.114
+    - 8.8.8.8
+  nameserver:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+  fallback:
+    - https://1.0.0.1/dns-query
+    - tls://dns.google
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+    ipcidr:
+      - 240.0.0.0/4
+EOF
+    fi
+    # 检查并下载 Country.mmdb 文件
+    if [ ! -f "${config_dir}/Country.mmdb" ]; then
+        echo "Country.mmdb文件不存在"
+        api_url="https://api.github.com/repos/Dreamacro/maxmind-geoip/releases/latest"
+        country_version=$(curl -k -s "$api_url" | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v' '{print $2}')
+        country_version=${country_version:-"20241012"}
+        download "${config_dir}/Country.mmdb" "https://github.com/Dreamacro/maxmind-geoip/releases/download/${country_version}/Country.mmdb" "Country.mmdb" true
+    fi
     success "$init_config_success_msg"
 }
+
+# 函数：根新配置
+update_config(){
+    # 重新初始化文件，补全缺少的网关配置
+    init_config
+    # 更改clashtool脚本部分配置文件
+    sed -i "s/^httpPort=/http_port=/" $clashtool_config_path
+    sed -i "s/^socksPort=/socks_port=/" $clashtool_config_path 
+    sed -i "s/^autoStart=/auto_start=/" $clashtool_config_path 
+    sed -i "s/^autoUpdateSub=/auto_update_sub=/" $clashtool_config_path 
+    sed -i '/^\s*$/d' $clashtool_config_path
+    update_clashtool_config 'gateway' "false"
+    # 重新创建服务文件解决使用系统服务启动时无法使用脚本结束
+    del_service_file
+    create_service_file
+    success "$migrate_config_success_msg"
+}
+
 
 # 函数：下载通用脚本
 # 参数：
@@ -952,7 +1056,7 @@ download_clash(){
     # 获取系统型号
     get_platform
     # 获取配置中当前安装的版本
-    current=$(get_clashtool_config 'version')
+    current=$(find_clashtool_config 'version')
     if [ -n "$current" ];then
         normal "${current_version_msg}${current}"
     fi
@@ -998,7 +1102,7 @@ download_clash(){
     # 赋予运行权限
     chmod +x "$clash_path"
     # 向clash配置文件写入当前版本
-    set_clashtool_config 'version' "$version"
+    update_clashtool_config 'version' "$version"
 }
 
 clear(){
@@ -1016,7 +1120,10 @@ clear(){
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 install() {
     version=$1
-    clear
+    # 如果已安装则报错
+    if [ -f "$clash_path" ];then
+        failed "Clash $was_install_msg"
+    fi
     # 检测安装依赖软件
     require
     # 创建服务脚本
@@ -1033,6 +1140,7 @@ install() {
 # 函数：卸载clash
 # 参数: $1：all -（可为空），默认不删除配置信息
 uninstall() {
+    all=$1
     # 开始删除clash
     normal "$uninstall_start_msg Clash"
     # 关闭clash
@@ -1040,21 +1148,23 @@ uninstall() {
         stop
     fi
     # 关闭自动启动
-    if [ "$(get_clashtool_config 'autoStart')" = 'true' ];then
+    if [ "$(find_clashtool_config 'auto_start')" = 'true' ];then
         auto_start false
     fi
     # 关闭自动更新订阅
-    if [ "$(get_clashtool_config 'autoUpdateSub')" = 'true' ];then
+    if [ "$(find_clashtool_config 'auto_update_sub')" = 'true' ];then
         auto_update_sub false
     fi
     # 删除服务脚本
     del_service_file
 
     # 删除Clash所有相关文件
-    if [ $1="all" ];then
+    if [ "$all" = "all" ];then
         rm -rf "${clash_dir}"
     else
         rm "$clash_path"
+        # 向clash配置文件写入版本为空
+        update_clashtool_config 'version' ""
     fi
     success "Clash $uninstall_success_msg"
 }
@@ -1080,16 +1190,16 @@ install_ui() {
     ui_name=$1
     # 没有指定UI则使用配置中指定UI
     if [ -z "${ui_name}" ]; then
-        ui_name=$(get_clashtool_config 'ui')
+        ui_name=$(find_clashtool_config 'ui')
     fi
     # 下载UI安装包
     if [ "${ui_name}" = "dashboard" ]; then
-        set_clashtool_config 'ui' "dashboard"
+        update_clashtool_config 'ui' "dashboard"
         ui_name="clash-dashboard-gh-pages"
         url="$dashboard_url"
     elif [ "${ui_name}" = "yacd" ]; then
         # 在clashtool配置文件中写入ui
-        set_clashtool_config 'ui' "yacd"
+        update_clashtool_config 'ui' "yacd"
         ui_name="yacd-gh-pages"
         url="$yacd_url"
     else
@@ -1115,7 +1225,7 @@ install_ui() {
     rm -rf "$temp_clash_ui_path"
     rm -rf "$temp_clash_ui_dir"
     # 设置ui配置
-    set_yaml_value 'external-ui' "$clash_ui_dir" "$config_path"
+    update_clash_config 'external-ui' "$clash_ui_dir"
     success "ClashUI $install_success_msg"
     # 如果正在运行则重新启动
     if $state;then
@@ -1131,9 +1241,9 @@ uninstall_ui(){
     fi
     normal "$uninstall_start_msg ClashUI" 
     rm -rf "${clash_ui_dir}"
-    set_clashtool_config 'ui' 'dashboard'
+    update_clashtool_config 'ui' 'dashboard'
     # 设置ui配置
-    set_yaml_value 'external-ui' ''  "$config_path"
+    delete_clash_config 'external-ui'
     success "ClashUI $uninstall_success_msg"
     # 如果状态为运行则重新启动
     if $state;then
@@ -1156,6 +1266,7 @@ update_ui(){
         restart
     fi
 }
+
 # 函数: 更新clashtool脚本
 update_script(){
     current_path=$(readlink -f "$0")
@@ -1171,10 +1282,12 @@ update_script(){
         warn "$install_equal_versions_warn_msg"
     fi
     download "${current_path}.temp" "$url" "Script"
-    cp "${current_path}.temp" $current_path
+        cp "${current_path}.temp" $current_path
     chmod 755 $current_path
     if [ -d $clash_dir ];then
         cp "${current_path}.temp" $script_path
+        # 升级配置相关文件
+        sh $script_path update_config
     fi
     rm "${current_path}.temp"
     success $update_script_success_msg
@@ -1186,38 +1299,25 @@ loading_config(){
     sub_name=$1
     # 未指定订阅，获取当前订阅
     if [ -z "$sub_name" ]; then
-        sub_name=$(get_subscribe_config '' 'use')
+        sub_name=$(find_subscribe_config '' 'use')
     fi
 
     if [ "$sub_name" = 'default' ]; then
         # 使用默认配置
-        temp_config_path="${config_path}"
+        cp $user_config_path $config_path
     else
         if existence_subscrib_config "${sub_name}";then
              # 文件不存在则更新订阅
             if [ ! -f "${subscribe_dir}/${sub_name}.yaml" ];then
                 update_sub "$sub_name"
             fi
-            temp_config_path="${subscribe_dir}/${sub_name}.yaml"
+            sub_config_path="${subscribe_dir}/${sub_name}.yaml"
+            # 合并用户配置文件和订阅配置文件生成Clash配置文件
+            merge_clash_config "$sub_config_path"
         else
              failed "$not_sub_exists_msg"
         fi  
     fi
-    port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
-    secret=$(get_yaml_value "secret" "${config_path}")
-    # 重载配置
-    if [ -z "$secret" ]; then
-        result=$(curl -s -X PUT "${proxy_host}:${port}/configs" -H "Content-Type: application/json" -d "{\"path\": \"${temp_config_path}\"}")
-    else
-        result=$(curl -s -X PUT "${proxy_host}:${port}/configs" -H "Content-Type: application/json" -H "Authorization: Bearer ${secret}" -d "{\"path\": \"${temp_config_path}\"}")
-    fi
-    # 解析返回数据判断使用重载成功
-    if [ -n "$result" ];then
-        normal "$result" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p'
-        failed "$clash_yaml_failed_msg"
-        return 1
-    fi
-    return 0
 }
 
 # 函数：启动clash
@@ -1228,9 +1328,18 @@ start() {
     if [ -n "$pid" ]; then
         warn "$clash_running_warn_msg"
     else
-        # 生成配置文件
-        # processing_config "$sub_name"
         normal "$clash_start_msg"
+        # 生成配置文件
+        loading_config "$sub_name"
+        # 判断是否开启透明网关
+        gateway_status=$(find_clashtool_config "gateway")
+        if [ "$gateway_status" = 'true' ];then
+            # 开启电脑网卡转发功能
+            sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+            if [ -f '/proc/sys/net/ipv6/ip_forward' ]; then
+               sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1
+            fi
+        fi
         # 启动clash
         nohup "${clash_path}" -d "${config_dir}" > "${logs_dir}/clash.log" 2>&1 &
         # 等待启动成功
@@ -1240,30 +1349,28 @@ start() {
         if [ -z "$pid" ];then
             failed "$clash_start_failed_msg"
         fi
-        # 加载配置文件
-        loading_config "$sub_name"
         # 修改运行状态
         state=true
         if [ -n "$sub_name" ];then
             # 更改配置中默认使用的配置文件
-            set_subscribe_config '' 'use' "$sub_name"
+            update_subscribe_config '' 'use' "$sub_name"
         fi
         # 显示提示信息
-        port=$(get_yaml_value "external-controller" "${config_path}" | awk -F ':' '{print $2}')
-        secret=$(get_yaml_value "secret" "${config_path}")
+        port=$(find_clash_config "external-controller" | awk -F ':' '{print $2}')
+        secret=$(find_clash_config "secret")
         success "$clash_start_success_msg"
         clash_ui_link_info
 
         if grep -q 'mixed-port:' "$config_path"; then
-            mixed_port=$(get_yaml_value 'mixed-port' "$config_path")
+            mixed_port=$(find_clash_config 'mixed-port')
             http_port="$mixed_port"
             mixed_port="$mixed_port"
         else
-            http_port=$(get_yaml_value 'port' "$config_path")
-            socks_port=$(get_yaml_value 'socks-port' "$config_path")
+            http_port=$(find_clash_config 'port')
+            socks_port=$(find_clash_config 'socks-port')
         fi
-        _http_port=$(get_clashtool_config 'httpPort')
-        _socks_port=$(get_clashtool_config 'socksPort')
+        _http_port=$(find_clashtool_config 'http_port')
+        _socks_port=$(find_clashtool_config 'socks_port')
         # 判断用户是否修改监http听端口
         if ([ "$http_port" != "$_http_port" ] || [ "$socks_port" != "$_socks_port" ]) && is_proxy;then
             remind "$proxy_port_update_msg"
@@ -1274,14 +1381,20 @@ start() {
 # 函数：停止clash
 stop() {
     # 判断程序是否运行
-    if [ -n "${pid}" ] ; then
+    if [ -n "${pid}" ]; then
         # 根据clash PID 结束Clash
         for temp_pid in $pid; do
-            kill "${temp_pid}"
+            if kill -0 "${temp_pid}" 2>/dev/null; then
+                kill "${temp_pid}"
+                # 等待进程结束
+                wait "${temp_pid}"
+            fi
         done
+        # 清理pid变量
         pid=""
+        # 判断是否是由systemctl启动的
         # 提醒关闭系统代理
-        if is_proxy;then
+        if is_proxy; then
             remind "$proxy_enable_reminder_msg"
         fi
         success "$clash_stop_success_msg"
@@ -1304,11 +1417,25 @@ reload() {
     if ! $state; then
         warn "$clash_not_running_warn_msg"
     fi
-    # 加载配置
+    # 生成配置
     loading_config "$sub_name"
+    # 重载配置
+    port=$(find_clash_config "external-controller" "${config_path}" | awk -F ':' '{print $2}')
+    secret=$(find_clash_config "secret" "${config_path}")
+    if [ -z "$secret" ]; then
+        result=$(curl -s -X PUT "${proxy_host}:${port}/configs" -H "Content-Type: application/json" -d "{\"path\": \"${config_path}\"}")
+    else
+        result=$(curl -s -X PUT "${proxy_host}:${port}/configs" -H "Content-Type: application/json" -H "Authorization: Bearer ${secret}" -d "{\"path\": \"${config_path}\"}")
+    fi
+    # 解析返回数据判断使用重载成功
+    if [ -n "$result" ];then
+        normal "$result" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p'
+        failed "$clash_yaml_failed_msg"
+        return 1
+    fi
     # 如果加载成功修改启用配置文件名
     if [ $? -eq 0 ]; then
-        set_subscribe_config '' 'use' "${sub_name}"
+        update_subscribe_config '' 'use' "${sub_name}"
         success "$clash_reload_success_msg"
     else
         failed "$clash_reload_failed_msg"
@@ -1318,11 +1445,12 @@ reload() {
 
 # 函数：获取Clash信息
 status() {
-    ui_name=$(get_clashtool_config 'ui')
-    version=$(get_clashtool_config 'version')
-    autostart=$(get_clashtool_config 'autoStart')
-    sub_name=$(get_subscribe_config '' 'use')
-    secret=$(get_yaml_value 'secret' "$config_path")
+    ui_name=$(find_clashtool_config 'ui')
+    version=$(find_clashtool_config 'version')
+    autostart=$(find_clashtool_config 'auto_start')
+    sub_name=$(find_subscribe_config '' 'use')
+    gateway_status=$(find_clashtool_config 'gateway')
+    secret=$(find_clash_config 'secret' "$config_path")
     if $state; then
         echo "$status_running_msg"
     else
@@ -1341,17 +1469,18 @@ status() {
         echo "${status_proxy_msg}false"
         
     fi
+    echo "${status_gateway_msg}${gateway_status}"
     clash_ui_link_info
     echo "${status_clash_path_msg}${clash_path}"
 }
 
 # 函数：显示当所有订阅
 list() {
-    names=$(get_subscribe_config '' 'names')
+    names=$(find_subscribe_config '' 'names')
     echo "$names" | tr ',' '\n' | while IFS= read -r name; do
         if [ -n "$name" ]; then
-            url=$(get_subscribe_config "$name" "url")
-            interval=$(get_subscribe_config "$name" "interval")
+            url=$(find_subscribe_config "$name" "url")
+            interval=$(find_subscribe_config "$name" "interval")
             echo ""
             echo "      $name"
             echo "====================="
@@ -1407,8 +1536,8 @@ add(){
         fi
         if existence_subscrib_config "$name"; then
             # 更新配置
-            set_subscribe_config "$name" 'url' "$url"
-            set_subscribe_config "$name" 'interval' "$interval"
+            update_subscribe_config "$name" 'url' "$url"
+            update_subscribe_config "$name" 'interval' "$interval"
             success "$update_sub_success_msg"
         else
             # 创建配置
@@ -1443,20 +1572,20 @@ del() {
     if existence_subscrib_config "${sub_name}"; then
 
         # 关闭自动更新定时任务
-        set_subscribe_config "$sub_name" "interval" "0"
+        update_subscribe_config "$sub_name" "interval" "0"
         auto_update_sub '' "${sub_name}"
 
         # 删除订阅配置信息
-        del_subscribe_config "${sub_name}"
+        delete_subscribe_config "${sub_name}"
         # 删除下载订阅文件
         if [ -f "${subscribe_dir}/${sub_name}.yaml" ]; then
             rm -rf "${subscribe_dir}/${sub_name}.yaml"
         fi
         # 判断当前订阅是否正在使用
-        use=$(get_subscribe_config '' 'use')
+        use=$(find_subscribe_config '' 'use')
         if [ "$use" = "${sub_name}" ]; then
             # 设置订阅配置为default
-            set_subscribe_config '' 'use' 'default'
+            update_subscribe_config '' 'use' 'default'
             # 重载配置
             if $state; then
                 reload "default"
@@ -1475,7 +1604,7 @@ update_sub() {
     # 是否更新所有订阅
     if [ "${sub_name}" = "all" ]; then
         # 更新所有订阅配置
-        names=$(get_subscribe_config '' 'names')
+        names=$(find_subscribe_config '' 'names')
         echo "$names" | tr ',' '\n' | while IFS= read -r name; do
             if [ -n "$name" ]; then
                 download_sub "${name}"
@@ -1483,7 +1612,7 @@ update_sub() {
         done
     else
         # 当前使用配置文件
-        use=$(get_subscribe_config '' 'use')
+        use=$(find_subscribe_config '' 'use')
         # 更新当前使用配置
         if [ -z "${sub_name}" ]; then
             if [ "$use" = "default" ];then
@@ -1513,7 +1642,7 @@ update_sub() {
 #   $2: url - 订阅地址 可为空，自动获取配置中url
 download_sub() {
     name=$1
-    url=${2:-$(get_subscribe_config "${name}" "url")}
+    url=${2:-$(find_subscribe_config "${name}" "url")}
     if [ -z "$url" ];then
         warn "$update_local_sub_failed_msg"
     else
@@ -1539,10 +1668,10 @@ auto_update_sub() {
     enable=$1
     sub_name=$2
     if [ "$enable" = 'true' ] || [ "$enable" = 'false' ];then
-        set_clashtool_config "autoUpdateSub" "$enable"
+        update_clashtool_config "auto_update_sub" "$enable"
         success $auto_update_sub_success_msg
     elif [ "$enable" = '' ];then
-        enable=$(get_subscribe_config 'autoUpdateSub')
+        enable=$(find_subscribe_config 'auto_update_sub')
     else
         failed $verify_failed_msg
     fi
@@ -1552,10 +1681,10 @@ auto_update_sub() {
     fi
     if [ -z "$sub_name" ]; then
         # 为空则根据配置和enable重新设置全部定时任务
-        names=$(get_subscribe_config '' 'names')
+        names=$(find_subscribe_config '' 'names')
         echo "$names" | tr ',' '\n' | while IFS= read -r name; do
             if [ -n "$name" ]; then
-                interval=$(get_subscribe_config "$name" 'interval')
+                interval=$(find_subscribe_config "$name" 'interval')
                 if [ "$enable" = "false" ] || [ "$interval" = '0' ]; then
                     crontab_tool '' "$script_path update_sub ${name} >> ${logs_dir}/crontab.log 2>&1"
                 else
@@ -1564,7 +1693,7 @@ auto_update_sub() {
             fi
         done
     else
-        interval=$(get_subscribe_config "$sub_name" 'interval')
+        interval=$(find_subscribe_config "$sub_name" 'interval')
         # 设置指定定时任务
         if [ "$enable" = "false" ] || [ "$interval" = '0' ]; then
             crontab_tool '' "$script_path update_sub ${sub_name} >> ${logs_dir}/crontab.log 2>&1"
@@ -1573,7 +1702,22 @@ auto_update_sub() {
         fi
     fi
 }
-
+gateway(){
+    enable=${1:-true}
+    verify $enable
+    if $enable; then
+        success "$gateway_enable_success_msg"
+    else
+        success "$gateway_disable_success_msg"
+    fi
+    gateway_status=$(find_clashtool_config 'gateway')
+    if [ "$gateway_status" != "$enable" ];then
+        update_clashtool_config "gateway" "$enable"
+        if $state; then
+            restart
+        fi
+    fi
+}
 # 函数：获取服务文件路径
 get_service_file(){
     case "$(get_linux_distribution)" in
@@ -1624,14 +1768,17 @@ create_service_file(){
                     echo "After=network.target"
                     echo ""
                     echo "[Service]"
+                    echo "Type=simple"
+                    echo "KillMode=process"
                     echo "ExecStart=$script_path start"
-                    echo "Restart=always"
+                    # echo "Restart=always"
                     echo "User=root"
                     echo ""
                     echo "[Install]"
                     echo "WantedBy=multi-user.target"
                 } > "$service_file"
                 chmod +x "$service_file"
+                systemctl daemon-reload
             fi
             ;;
         *)
@@ -1681,21 +1828,20 @@ auto_start() {
         esac
         success "$auto_start_turned_off_success_msg"
     fi
-    set_clashtool_config 'autoStart' "$enable"
+    update_clashtool_config 'auto_start' "$enable"
 }
 
 # 函数：开启系统代理
 proxy_on() {
     if $state;then
-        mixed_port=$(get_yaml_value 'mixed-port' "$config_path")
+        mixed_port=$(find_clash_config 'mixed-port' "$config_path")
         if [ -n "$mixed_port" ]; then
             http_port="$mixed_port"
             socks_port="$mixed_port"
         else
-            http_port=$(get_yaml_value 'port' "$config_path")
-            socks_port=$(get_yaml_value 'socks-port' "$config_path")
+            http_port=$(find_clash_config 'port' "$config_path")
+            socks_port=$(find_clash_config 'socks-port' "$config_path")
         fi
-
         # 设置环境变量
         # 检查 "$bashrc" 是否存在
         if [ ! -f "$bashrc" ]; then
@@ -1753,6 +1899,7 @@ proxy_on() {
 
         # 设置 KDE 桌面代理
         if command -v kwriteconfig5 >/dev/null 2>&1; then
+            echo "已进入kwriteconfig5"
             kwriteconfig5 --file kioslaverc --group 'Proxy Settings' --key ProxyType 1
             for proto in $proxy_keys; do
                 if [ $proto = 'socks' ];then
@@ -1766,8 +1913,8 @@ proxy_on() {
         fi
 
         # 配置文件写入相关端口信息
-        sh $script_path 'clashtool' "httpPort::$http_port"
-        sh $script_path 'clashtool' "socksPort::$socks_port"
+        sh $script_path 'clashtool' "http_port::$http_port"
+        sh $script_path 'clashtool' "socks_port::$socks_port"
         success "$proxy_on_success_msg"
     else
         warn "$clash_not_running_warn_msg" false
@@ -1778,7 +1925,7 @@ proxy_on() {
 proxy_off(){
     # 删除环境变量的代理设置
     sed -i '/_proxy=/d' "$bashrc"
-    sed -i '/no_proxy=/d' "$bashrc"
+    # sed -i '/no_proxy=/d' "$bashrc"
     # 生效设置
     source $bashrc
 
@@ -1879,11 +2026,11 @@ userconfig(){
         echo "$temp_val"
         exit 0
     fi
-    temp_val=$(get_yaml_value "$key" "$config_path")
+    temp_val=$(find_clash_config "$key")
     if [ -z "$temp_val" ];then
         failed $confg_key_error_msg
     fi
-    set_yaml_value "$key" "$val" "$config_path"
+    update_clash_config "$key" "$val"
 }
 
 # 函数:获取或修改clashtool配置
@@ -1895,11 +2042,11 @@ clashtool() {
         echo "$temp_val"
         exit 0
     fi
-    temp_val=$(get_clashtool_config "$key")
+    temp_val=$(find_clashtool_config "$key")
     if [ -z "$temp_val" ];then
         failed $confg_key_error_msg
     fi
-    set_clashtool_config "$key" "$val"
+    update_clashtool_config "$key" "$val"
 }
 
 # 定义菜单函数
@@ -2038,6 +2185,7 @@ menu() {
         echo "$menu_main_option7"
         echo "$menu_main_option8"
         echo "$menu_main_option9"
+        echo "$menu_main_help"
         echo "$menu_exit"
         echo "$menu_end"
         read -p "$prompt_choice_msg" choice
@@ -2065,7 +2213,23 @@ menu() {
             6) status;;
             7) $0 update_script;;
             8) echo "$proxy_not_source_command_msg";;
-            9) echo "$help_msg";;
+            9)  
+                while true; do
+                    echo "$menu_gateway"
+                    echo "$menu_gateway_option1"
+                    echo "$menu_gateway_option2"
+                    echo "$menu_return"
+                    echo "$menu_end"
+                    read -p "$prompt_choice_msg" input
+                    case $input in
+                        1) $0 gateway true;;
+                        2) $0 gateway false;;
+                        'r') break;;
+                        *) echo "$menu_invalid_choice";;
+                    esac
+                done
+                ;;
+            h) echo "$help_msg";;
             'q') break;;
             *) echo "$menu_invalid_choice";;
         esac
@@ -2097,7 +2261,7 @@ main() {
             check_and_elevate "$@"
             $fun "$var"
             ;;
-        "uninstall"|"update"|"install_ui"|"uninstall_ui"|"update_ui"|"start"|"stop"|"restart"|"reload"|"add"|"list"|"del"|"update_sub"|"auto_update_sub"|"auto_start"|"update_script"|"clashtool"|"userconfig")
+        "uninstall"|"update"|"install_ui"|"uninstall_ui"|"update_ui"|"start"|"stop"|"restart"|"reload"|"add"|"list"|"del"|"update_sub"|"auto_update_sub"|"auto_start"|"update_script"|"gateway"|"clashtool"|"userconfig"|"update_config")
             if [ ! -f "$clash_path" ];then
                 failed $not_install_msg
             fi

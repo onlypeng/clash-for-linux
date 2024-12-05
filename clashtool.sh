@@ -1,5 +1,5 @@
 #!/bin/sh  
-# version:1.2.0
+# version:1.2.1
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -377,27 +377,29 @@ chinese_language(){
 
 # 函数：判断指定节是否存在
 # 参数：
-#   $1: file - 文件名
-#   $2: section - 指定节
+#   $1: section - 指定节
+#   $2: file - 文件名
+# 返回值：如果存在返回 0，否则返回 1
 section_exists() {
-    file=$1
-    section=$2
+    section=$1
+    file=$2
     grep -q "^\[$section\]$" "$file"
     return $?
 }
 
-# 函数：添加或修改INI配置文件
+# 函数：更新指定节和键的值
 # 参数：
 #   $1: section - 指定节
-#   $2: key - 变量名
-#   $3: value - 值
+#   $2: key - 指定键
+#   $3: value - 新值
 #   $4: file - 文件名
 update_ini() {
-    section=$1
-    key=$2
-    value=$3
-    file=$4
-    temp_file=$(mktemp)
+    local section="$1"
+    local key="$2"
+    local value="$3"
+    local file="$4"
+    local temp_file="${file}.tmp"
+
     awk -v section="$section" -v key="$key" -v value="$value" '
     BEGIN { in_section = 0; key_written = 0 }
     /^\s*\[.*\]/ {
@@ -419,21 +421,18 @@ update_ini() {
             print "[" section "]"
             print key "=" value
         }
-    }' "$file" > "$temp_file"
-
-    mv "$temp_file" "$file"
+    }' "$file" > "$temp_file" && mv $temp_file "$file"
 }
-
-# 函数：删除INI配置项或指定节
+# 函数：删除指定节和键的值
 # 参数：
 #   $1: section - 指定节
-#   $2: key - 变量名
+#   $2: key - 指定键
 #   $3: file - 文件名
 delete_ini() {
-    section=$1
-    key=$2
-    file=$3
-    temp_file=$(mktemp)
+    local section="$1"
+    local key="$2"
+    local file="$3"
+    local temp_file="${file}.tmp"
 
     awk -v section="$section" -v key="$key" '
     BEGIN { in_section = 0 }
@@ -442,20 +441,38 @@ delete_ini() {
     }
     !(in_section && $1 ~ key"=") {
         print
-    }' "$file" > "$temp_file"
+    }' "$file" > "$temp_file" && mv $temp_file "$file"
+}
+# 函数：删除指定节
+# 参数：
+#   $1: section - 指定节
+#   $2: file - 文件名
+delete_ini_section() {
+    section="$1"
+    file="$2"
+    local temp_file="${file}.tmp"
 
-    mv "$temp_file" "$file"
+    awk -v section="$section" '
+    BEGIN { in_section = 0 }
+    /^\[.*\]$/ {
+        if (in_section) in_section = 0
+        if ($0 == "[" section "]") in_section = 1
+    }
+    !in_section { print }
+    ' "$file" > "$temp_file" && mv "$temp_file" "$file"
 }
 
-# 函数：获取INI配置文件
+# 函数：获取指定节和键的值
 # 参数：
-#   $1: file - 文件名
-#   $2: section - 指定节
-#   $3: key - 变量名
+#   $1: section - 指定节
+#   $2: key - 指定键
+#   $3: file - 文件名
+# 返回值：指定节和键的值
 find_ini() {
-    section=$1
-    key=$2
-    file=$3
+    local section="$1"
+    local key="$2"
+    local file="$3"
+    
     awk -v section="$section" -v key="$key" '
     BEGIN { in_section = 0 }
     /^\s*\[.*\]/ { 
@@ -492,7 +509,7 @@ update_clashtool_config() {
 # 参数：$1: sub_name - 订阅名称
 existence_subscrib_config() {
     sub_name=$1
-    section_exists "${clashtool_config_path}" "subscribe_${sub_name}"
+    section_exists "subscribe_${sub_name}" "${clashtool_config_path}"
     return $?
 }
 
@@ -540,7 +557,7 @@ delete_subscribe_config() {
     names=$(find_subscribe_config '' 'names' | sed "s/${name},//g")
     update_subscribe_config '' 'names' "$names"
     # 删除订阅节点
-    delete_ini "subscribe_$name" '' "${clashtool_config_path}"
+    delete_ini_section "subscribe_$name" "${clashtool_config_path}"
 }
 
 # 获取订阅配置
@@ -559,61 +576,173 @@ find_subscribe_config() {
     find_ini "${sec}" "${key}" "${clashtool_config_path}"
 }
 
-# 函数：获取用户Clash配置
+# 函数：添加yaml
+# 参数：
+#   $1: key - 变量名
+#   $2: value - 变量值
+#   $3: file - 配置文件路径
+add_yaml() {
+    key="$1"
+    value="$2"
+    file="$3"
+    if [ -n "$(tail -c 1 $file)" ]; then
+        echo >> "$file"
+    fi
+    echo "$key: $value" >> "$file"
+}
+
+# 函数：删除yaml
+# 参数：
+#   $1: key - 变量名
+#   $2: file - 配置文件路径
+delete_yaml() {
+    local key="$1"
+    local file="$2"
+    local local temp_file="${file}.tmp"
+
+    # 使用 awk 删除指定的 key 及其值
+    awk -v key="$key" '
+    BEGIN { in_section = 0; }
+    {
+        # 查找目标键，并进入删除模式
+        if ($0 ~ "^" key ":") {
+            in_section = 1
+            next
+        } else if (in_section) {
+            # 如果该键的值是多行，继续删除
+            if ($0 ~ /^[ \t-]/ || $0 ~ /^$/) {
+                next
+            } else {
+                # 退出删除模式
+                in_section = 0
+            }
+        }
+        # 保留非目标键的行
+        print $0
+    }
+    ' "$file" > "$temp_file" && mv $temp_file "$file"
+}
+# 函数：更新yaml
+# 参数：
+#   $1: key - 变量名
+#   $2: value - 变量值
+#   $3: file - 配置文件路径
+update_yaml(){
+    key="$1"
+    value="$2"
+    file="$3"
+    local temp_file="${file}.tmp"
+    # 使用 awk 直接修改文件
+    awk -v key="$key" -v value="$value" '
+    BEGIN {
+        in_section = 0
+    }
+    {
+        if ($0 ~ "^" key ":") {
+            in_section = 1
+            next
+        } else if (in_section) {
+            if ($0 ~ /^[ \t-]/ || $0 ~ /^$/) {
+                next
+            } else {
+                in_section = 0
+                print key ": " value
+            }
+        }
+        print $0
+    }
+    ' "$file" > temp_file && mv $temp_file "$file"
+}
+# 函数：查找yaml
+# 参数：
+#   $1: key - 变量名
+#   $2: file - 配置文件路径
+
+find_yaml() {
+    key="$1"
+    file="$2"
+
+    awk -v key="$key" -v value="$value" '
+    BEGIN {
+        in_section = 0
+    }
+    {
+        if ($0 ~ "^" key ":") {
+            in_section = 1
+            print substr($0, index($0, ":") + 2)
+        } else if (in_section) {
+            if ($0 ~ /^[ \t-]/ || $0 ~ /^$/) {
+                print $0
+            } else {
+                in_section = 0
+            }
+        }
+    }
+    ' "$file"
+}
+
+# 函数：删除用户Clash配置
 # 参数：
 #   $1: key - 订阅名称
-#   $2: file - 订阅文件
-find_clash_config(){
+delete_user_config() {
     key="$1"
-    sed -n "/^${key}:/,/^[[:alnum:]]/{s/^${key}:[[:space:]]\{0,1\}//p;t end;/^[[:alnum:]]/!p;:end}" "$user_config_path"
+    # 使用 sed 删除键的范围，不包括终点行
+    delete_yaml "$key" "$user_config_path"
 }
 
 # 函数：添加或修改用户Clash配置
 # 参数：
 #   $1: key - 订阅名称
 #   $2: val - 订阅值
-update_clash_config() {
+update_user_config() {
     key="$1"
     value="$2"
-    temp_file="$(mktemp)"
+    temp_file="${user_config_path}.tmp"
     for temp_key in $clash_config_keys; do
         if [ "$temp_key" = "$key" ] && [ -n "$value" ]; then
             # 如果新值不为空，则更新临时文件中的值
             echo "${temp_key}: ${value}" >> "$temp_file"
         elif grep -Eq "^${temp_key}:" "$user_config_path"; then
             # 如果原文件存在则把相关信息复制到临时文件
-            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $user_config_path >> "$temp_file"
+            value=$(find_user_config "$temp_key")
+            echo "${temp_key}: ${value}" >> "$temp_file"
         fi
     done
     check_conf "$temp_file"
     mv "$temp_file" "$user_config_path"
 }
 
-# 函数：删除用户Clash配置
+
+# 函数：获取用户Clash配置
 # 参数：
 #   $1: key - 订阅名称
-delete_clash_config() {
+#   $2: file - 订阅文件
+find_user_config(){
     key="$1"
-    # 使用 sed 删除键的范围，不包括终点行
-    sed -i "/^${key}:/,/^[[:alnum:]]/{/^${key}:/d;/^[[:alnum:]]/!d}" "$user_config_path"
+    find_yaml "$key" "$user_config_path"
 }
 
 # 函数：合并用户和订阅的Clash配置
+# 参数：
+#   $1: sub_config_path - 订阅配置文件路径
 merge_clash_config() {
     sub_config_path="$1"
     gateway_status=$(find_clashtool_config "gateway")
-    temp_file="$(mktemp)"
+    temp_file="${config_path}.tmp"
     for temp_key in $clash_config_keys; do
         if grep -Eq "^${temp_key}:" "$user_config_path"; then
-            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $user_config_path >> "$temp_file"
+            value=$(find_user_config "$temp_key")
+            echo "${temp_key}: ${value}" >> "$temp_file"
         elif [ "$gateway_status" = "true" ] && grep -Eq "^${temp_key}:" "$gateway_config_path"; then
-            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $gateway_config_path >> "$temp_file"
+            value=$(find_yaml "$temp_key" "$gateway_config_path")
+            echo "${temp_key}: ${value}" >> "$temp_file"
         elif grep -Eq "^${temp_key}:" "$sub_config_path"; then
-            sed -n "/^${temp_key}:/,/^[[:alnum:]]/{/^${temp_key}:/p; /^[[:alnum:]]/!p}" $sub_config_path >> "$temp_file"
+            value=$(find_yaml "$temp_key" "$sub_config_path")
+            echo "${temp_key}: ${value}" >> "$temp_file"
         fi
     done
     check_conf "$temp_file"
-    mv "$temp_file" "$config_path" 
+    mv "$temp_file" "$config_path"
 }
 
 # 通用消息函数
@@ -650,7 +779,7 @@ normal() { message "0" "INFO" "$1" "${2:-false}"; }
 # 函数：输出UI链接相关信息
 clash_ui_link_info(){
     ips=$(ip -o -4 addr show | awk '!/127.0.0.1/ {print $4}' | cut -d'/' -f1)
-    port=$(find_clash_config "external-controller" | awk -F ':' '{print $2}')
+    port=$(find_user_config "external-controller" | awk -F ':' '{print $2}')
     echo "$status_clash_address_msg"
     for ip in $ips; do
         echo "    http://$ip:${port}"
@@ -888,7 +1017,7 @@ init_config() {
     if [ ! -d $clash_dir ]; then
         mkdir -p "${clash_dir}"
     fi
-    
+
     # 检查并创建配置目录
     if [ ! -d $config_dir ]; then
         mkdir -p "${config_dir}"
@@ -989,23 +1118,30 @@ EOF
 
 # 函数：根新配置
 update_config(){
-    # 备份用户配置文件
-    cp -r $config_dir "${config_dir}.bak"
-    # 重命名用户文件
-    mv $config_path "$user_config_path"
-    # 重新初始化文件，补全缺少的网关配置
-    init_config
-    # 更改clashtool脚本部分配置文件
-    sed -i "s/^httpPort=/http_port=/" $clashtool_config_path
-    sed -i "s/^socksPort=/socks_port=/" $clashtool_config_path 
-    sed -i "s/^autoStart=/auto_start=/" $clashtool_config_path 
-    sed -i "s/^autoUpdateSub=/auto_update_sub=/" $clashtool_config_path 
-    sed -i '/^\s*$/d' $clashtool_config_path
-    update_clashtool_config 'gateway' "false"
-    # 重新创建服务文件解决使用系统服务启动时无法使用脚本结束
-    del_service_file
-    create_service_file
-    success "$migrate_config_success_msg"
+    current_version=120
+    if [ -f "${clash_path}.bak" ]; then
+        current_version=$(grep '^# version:' "${clash_path}.bak" | head -1 | sed 's/# version://;s/\.//g' )
+        current_version=$(expr $current_version + 0)
+    fi
+    if [ $current_version -lt 120 ]; then
+        # 备份用户配置文件
+        cp -r $config_dir "${config_dir}.bak"
+        # 重命名用户文件
+        mv $config_path "$user_config_path"
+        # 重新初始化文件，补全缺少的网关配置
+        init_config
+        # 更改clashtool脚本部分配置文件
+        sed -i "s/^httpPort=/http_port=/" $clashtool_config_path
+        sed -i "s/^socksPort=/socks_port=/" $clashtool_config_path 
+        sed -i "s/^autoStart=/auto_start=/" $clashtool_config_path 
+        sed -i "s/^autoUpdateSub=/auto_update_sub=/" $clashtool_config_path 
+        sed -i '/^\s*$/d' $clashtool_config_path
+        update_clashtool_config 'gateway' "false"
+        # 重新创建服务文件解决使用系统服务启动时无法使用脚本结束
+        del_service_file
+        create_service_file
+        success "$migrate_config_success_msg"
+    fi
 }
 
 
@@ -1229,7 +1365,7 @@ install_ui() {
     rm -rf "$temp_clash_ui_path"
     rm -rf "$temp_clash_ui_dir"
     # 设置ui配置
-    update_clash_config 'external-ui' "$clash_ui_dir"
+    update_user_config 'external-ui' "$clash_ui_dir"
     success "ClashUI $install_success_msg"
     # 如果正在运行则重新启动
     if $state;then
@@ -1239,15 +1375,15 @@ install_ui() {
 
 # 函数：卸载UI
 uninstall_ui(){
-    # 删除当前已安装UI
     if [ ! -d "${clash_ui_dir}" ]; then
         failed "ClashUI $not_install_msg"
     fi
     normal "$uninstall_start_msg ClashUI" 
+    # 删除当前已安装UI
     rm -rf "${clash_ui_dir}"
     update_clashtool_config 'ui' 'dashboard'
     # 设置ui配置
-    delete_clash_config 'external-ui'
+    delete_user_config 'external-ui'
     success "ClashUI $uninstall_success_msg"
     # 如果状态为运行则重新启动
     if $state;then
@@ -1362,18 +1498,18 @@ start() {
             update_subscribe_config '' 'use' "$sub_name"
         fi
         # 显示提示信息
-        port=$(find_clash_config "external-controller" | awk -F ':' '{print $2}')
-        secret=$(find_clash_config "secret")
+        port=$(find_user_config "external-controller" | awk -F ':' '{print $2}')
+        secret=$(find_user_config "secret")
         success "$clash_start_success_msg"
         clash_ui_link_info
 
         if grep -q 'mixed-port:' "$config_path"; then
-            mixed_port=$(find_clash_config 'mixed-port')
+            mixed_port=$(find_user_config 'mixed-port')
             http_port="$mixed_port"
             mixed_port="$mixed_port"
         else
-            http_port=$(find_clash_config 'port')
-            socks_port=$(find_clash_config 'socks-port')
+            http_port=$(find_user_config 'port')
+            socks_port=$(find_user_config 'socks-port')
         fi
         _http_port=$(find_clashtool_config 'http_port')
         _socks_port=$(find_clashtool_config 'socks_port')
@@ -1426,8 +1562,8 @@ reload() {
     # 生成配置
     loading_config "$sub_name"
     # 重载配置
-    port=$(find_clash_config "external-controller" "${config_path}" | awk -F ':' '{print $2}')
-    secret=$(find_clash_config "secret" "${config_path}")
+    port=$(find_user_config "external-controller" | awk -F ':' '{print $2}')
+    secret=$(find_user_config "secret")
     if [ -z "$secret" ]; then
         result=$(curl -s -X PUT "${proxy_host}:${port}/configs" -H "Content-Type: application/json" -d "{\"path\": \"${config_path}\"}")
     else
@@ -1456,7 +1592,7 @@ status() {
     autostart=$(find_clashtool_config 'auto_start')
     sub_name=$(find_subscribe_config '' 'use')
     gateway_status=$(find_clashtool_config 'gateway')
-    secret=$(find_clash_config 'secret' "$config_path")
+    secret=$(find_user_config 'secret')
     if $state; then
         echo "$status_running_msg"
     else
@@ -1840,13 +1976,13 @@ auto_start() {
 # 函数：开启系统代理
 proxy_on() {
     if $state;then
-        mixed_port=$(find_clash_config 'mixed-port' "$config_path")
+        mixed_port=$(find_user_config 'mixed-port')
         if [ -n "$mixed_port" ]; then
             http_port="$mixed_port"
             socks_port="$mixed_port"
         else
-            http_port=$(find_clash_config 'port' "$config_path")
-            socks_port=$(find_clash_config 'socks-port' "$config_path")
+            http_port=$(find_user_config 'port')
+            socks_port=$(find_user_config 'socks-port')
         fi
         # 设置环境变量
         # 检查 "$bashrc" 是否存在
@@ -2032,11 +2168,11 @@ userconfig(){
         echo "$temp_val"
         exit 0
     fi
-    temp_val=$(find_clash_config "$key")
+    temp_val=$(find_user_config "$key")
     if [ -z "$temp_val" ];then
         failed $confg_key_error_msg
     fi
-    update_clash_config "$key" "$val"
+    update_user_config "$key" "$val"
 }
 
 # 函数:获取或修改clashtool配置

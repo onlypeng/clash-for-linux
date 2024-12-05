@@ -1,3 +1,4 @@
+1.2.1修复alpine系统时修改配置报错问题<br>
 1.2.0添加设置本机为网关功能，修复部分bug(由于更新功能，需手动更新配置文件，请手动运行clashtool.sh update_config)<br>
 1.1.1修复卸载参数all无效bug,删除测试网关设置相关代码<br>
 1.1.0添加选择操作菜单，修复部分bug,切换测试用Clahs库，切换dashboard UI库。<br>

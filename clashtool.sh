@@ -1317,7 +1317,7 @@ update() {
     download_clash "$version"
     # 记录运行状态为启动时重新启动clash
     if $state; then
-        start
+        restart
     fi
 }
 

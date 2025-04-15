@@ -1,5 +1,5 @@
 #!/bin/sh  
-# version:1.2.1
+# version:1.2.2
 
 # 网页初始链接密码，不填写则随机生成
 secret=''

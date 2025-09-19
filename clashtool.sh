@@ -1,5 +1,5 @@
 #!/bin/sh  
-# version:1.2.2
+# version:1.2.3
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -614,6 +614,24 @@ config_exists() {
     "$yq_path" e ".$key | tag == \"!!null\" | not" "$file" 2>/dev/null | grep -q "true"
 }
 
+# 插入新的 YAML 配置项（只在键不存在时插入）
+# 参数: $1=键路径, $2=值, $3=配置文件路径
+# 返回值: 0=插入成功, 1=键已存在或插入失败
+add_yaml() {
+    key="$1"
+    value="$2"
+    file="$3"
+    
+    # 检查键是否已存在
+    if config_exists "$key" "$file"; then
+        update_yaml "$key" "$value" "$file"
+    fi
+    
+    # 插入新键值对
+    "$yq_path" e ".$key = \"$value\"" -i "$file" 2>/dev/null
+    return $?
+}
+
 # 删除 YAML 配置项
 # 参数: $1=键路径, $2=配置文件路径
 # 返回值: 0=成功, 1=失败
@@ -634,7 +652,8 @@ update_yaml() {
     file="$3"
     
     # 直接使用 yq 的赋值功能，让 yq 自动处理类型
-    "$yq_path" e ".$key = ${value}" -i "$file" 2>/dev/null
+    "$yq_path" e ".$key = \"$value\"" -i "$file" 2>/dev/null
+
 }
 
 # 查找 YAML 配置项值
@@ -646,6 +665,12 @@ find_yaml() {
     
     # 直接输出 YAML 值
     "$yq_path" e ".$key" "$file" 2>/dev/null
+}
+
+add_user_config() {
+    key="$1"
+    val="$2"
+    add_yaml "$key" "$val" "$user_config_path"
 }
 
 # 函数：删除用户Clash配置
@@ -1372,7 +1397,7 @@ install_ui() {
     rm -rf "$temp_file_path"
     rm -rf "$temp_file_dir"
     # 设置ui配置
-    update_user_config 'external-ui' "$clash_ui_dir"
+    add_user_config 'external-ui' "$clash_ui_dir"
     update_clashtool_config 'ui' "$ui_name"
     success "ClashUI $install_success_msg"
     # 如果正在运行则重新启动

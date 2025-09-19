@@ -1,5 +1,5 @@
 #!/bin/sh  
-# version:1.2.1
+# version:1.2.2
 
 # 网页初始链接密码，不填写则随机生成
 secret=''
@@ -8,21 +8,35 @@ platform=''
 # 使用中文提示输出语言
 chinese=true
 # clash项目库
-# https://github.com/MetaCubeX/mihomo/releases/download/v1.18.9/mihomo-linux-amd64-v1.18.9.gz
-clash_repo='MetaCubeX/mihomo'
+yq_version=''
+# mmdb版本
+mmdb_version=''
+# clash库 https://github.com/MetaCubeX/mihomo/releases/download/v1.19.13/mihomo-linux-amd64-v1.19.13gz
+repo_clash='MetaCubeX/mihomo'
 # clash download/后路径解析 可用变量 版本 :version: 架构 :platform:
-clash_releases_file='v:version:/mihomo-linux-:platform:-v:version:.gz'
-#Country.mmdb下载地址https://github.com/Dreamacro/maxmind-geoip/releases/latest/download/Country.mmdb
-# yacd UI项目
-yacd_url='https://github.com/ayanamist/clash-dashboard/archive/refs/heads/gh-pages.zip'
-# clash-dashboardUI项目
-dashboard_url='https://github.com/ayanamist/clash-dashboard/archive/refs/heads/gh-pages.zip'
+releases_file_clash='v:version:/mihomo-linux-:platform:-v:version:.gz'
+
+# yq库 https://github.com/mikefarah/yq/releases/download/v1.18.9/yq_linux_amd64
+repo_yq='mikefarah/yq'
+# yq download/后路径解析 可用变量 版本 :version: 架构 :platform:
+releases_file_yq='v:version:/yq_linux_:platform:'
+
+# Country.mmdb 库 https://github.com/Dreamacro/maxmind-geoip/releases/download/20250912/Country.mmdb
+repo_mmdb='Dreamacro/maxmind-geoip'
+# mmdb download/后路径解析 可用变量 版本 :version: 架构 :platform:
+releases_file_mmdb=':version:/Country.mmdb'
+
+# UI项目
+ui_yacd='https://github.com/haishanh/yacd/archive/refs/heads/gh-pages.zip'
+ui_dashboard='https://github.com/ayanamist/clash-dashboard/archive/refs/heads/gh-pages.zip'
+ui_zashboard='https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip'
+
 # 下在错误重试次数
 max_retries=3
 # 订阅使用github代理下载
 sub_proxy=false
 # github下载代理地址，clash和ui下载默认使用该代理,地址最后携带/
-github_proxy="https://ghp.ci/"
+github_proxy="https://gh-proxy.com/"
 # 设置代理的环境变量(一般为本机)
 proxy_host="http://127.0.0.1"
 proxy_keys="http https ftp socks"
@@ -32,6 +46,7 @@ proxy_no="localhost,127.0.0.1,::1"
 service_name="clash"
 # clash安装目录
 clash_dir="/opt/${service_name}"
+export SAFE_PATHS="$clash_dir"
 # 脚本存放位置
 script_path="${clash_dir}/clashtool.sh"
 # clash UI安装目录
@@ -51,6 +66,10 @@ if [ -n "$SUDO_USER" ]; then
 fi
 # clash文件
 clash_path="${clash_dir}/clash"
+# yq文件
+yq_path="${clash_dir}/yq"
+# mihomo根配置文件
+# root_confg_path="$HOME/.config/mihomo/config.ymal"
 # clash配置文件
 config_path="${config_dir}/config.yaml"
 # 用户自定义配置文件
@@ -89,8 +108,9 @@ menu_core_option4="4. Uninstall Clash Core and Delete Configuration Files"
 menu_ui="========= Clash UI Functions ========="
 menu_ui_option1="1. Install/Switch Clash UI yacd"
 menu_ui_option2="2. Install/Switch Clash UI dashboard"
-menu_ui_option3="3. Update Clash UI"
-menu_ui_option4="4. Uninstall Clash UI"
+menu_ui_option3="3. Install/Switch Clash UI zashboard"
+menu_ui_option4="4. Update Clash UI"
+menu_ui_option5="5. Uninstall Clash UI"
 menu_subscription="========== Clash Subscription Functions =========="
 menu_subscription_option1="1. Add Clash Subscription"
 menu_subscription_option2="2. Modify Clash Subscription"
@@ -147,7 +167,7 @@ get_version_failed_msg="Failed to retrieve version."
 latest_version_msg="Latest Version:"
 current_version_msg="Currently version:"
 install_equal_versions_warn_msg="Newly installed version is the same as the current version"
-install_ui_parameter_failed_msg="Parameter error. It can only be 'dashboard' or 'yacd'. Default is the currently installed version."
+install_ui_parameter_failed_msg="Parameter error. It can only be 'dashboard' or 'yacd' or zashboard. Default is the currently installed version."
 update_script_success_msg='Script Update Success'
 clash_running_warn_msg="Clash service is already running"
 clash_not_running_warn_msg="Clash service is not running"
@@ -165,8 +185,9 @@ add_sub_success_msg="Subscription information added successfully"
 add_sub_parameter_failed_msg="Format error: Format should be 'Subscription name::Subscription address (or file path)::Subscription update interval (hours, can be empty)'"
 delete_sub_success_msg="Subscription information deleted successfully"
 update_sub_success_msg="Subscription information updated successfully"
-auto_update_sub_success_msg="Successfully updated subscription settings automatically"
-update_default_sub_failed_msg="Currently using the default configuration, unable to update"
+auto_update_sub_off_success_msg="Successfully updated subscription settings automatically"
+auto_update_sub_off_success_msg="Auto update subscription has been turned off"
+auto_update_sub_on_success_msg="Auto update subscription has been turned on"
 update_local_sub_failed_msg="This configuration is a configuration and has been skipped"
 not_sub_exists_msg="Subscription does not exist"
 auto_start_enabled_success_msg="Auto-start enabled"
@@ -198,26 +219,26 @@ confg_key_error_msg="Variable does not exist"
 
 help_msg="
     Command                    Parameters                            Description
-    install          Version                  Optional    Install Clash (defaults to the latest version).
-    uninstall        None                                 Uninstalling Clash while deleting related configurations.
-    update           Version                  Optional    Update Clash (defaults to the latest version).
-    install_ui       dashboard or yacd        Optional    Install the web UI (defaults to dashboard).
-    uninstall_ui     None                     Optional    Uninstall Clash UI.
-    update_ui        dashboard or yacd        Optional    Update or replace Clash UI (defaults to the currently used UI).
-    update_script    None                                 Update clash-for-linux Script
-    start            SubscriptionName         Optional    Start Clash, defaults to the current subscription.
-    stop             None                     Optional    Stop Clash service.
-    restart          SubscriptionName         Optional    Restart Clash, defaults to the current subscription.
-    reload           SubscriptionName         Optional    Reload Clash, defaults to the current subscription.
-    add              SubscriptionInfo                     Add or modify subscription info (format: 'SubscriptionName::SubscriptionURL(LocalFilePath)::UpdateInterval(hours, can be empty)').
-    del              SubscriptionName                     Delete a subscription.
-    update_sub       SubscriptionName or all  Optional    Update the subscription file (defaults to the current subscription); 'all' updates all subscriptions (excluding subscriptions).
-    auto_update_sub  true or false                        Turn automatic update subscription on or off.
-    list             None                     Optional    List all subscription information.
-    auto_start       true or false            Optional    Enable or disable auto-start on boot (defaults to true).
-    status           None                     Optional    View Clash-related information.
-    proxy            true or false            Optional    Enable or disable proxy (defaults to true); this command must be executed using 'source'.
-    gateway          true or false            Optional    Enable or disable gateway (defaults to true)."
+    install          Version                        Optional    Install Clash (defaults to the latest version).
+    uninstall        None                                       Uninstalling Clash while deleting related configurations.
+    update           Version                        Optional    Update Clash (defaults to the latest version).
+    install_ui       dashboard or yacd or zashboard Optional    Install the web UI (defaults to dashboard).
+    uninstall_ui     None                           Optional    Uninstall Clash UI.
+    update_ui        dashboard or yacd or zashboard Optional    Update or replace Clash UI (defaults to the currently used UI).
+    update_script    None                                       Update clash-for-linux Script
+    start            SubscriptionName               Optional    Start Clash, defaults to the current subscription.
+    stop             None                           Optional    Stop Clash service.
+    restart          SubscriptionName               Optional    Restart Clash, defaults to the current subscription.
+    reload           SubscriptionName               Optional    Reload Clash, defaults to the current subscription.
+    add              SubscriptionInfo                           Add or modify subscription info (format: 'SubscriptionName::SubscriptionURL(LocalFilePath)::UpdateInterval(hours, can be empty)').
+    del              SubscriptionName                           Delete a subscription.
+    update_sub       SubscriptionName or all        Optional    Update the subscription file (defaults to the current subscription); 'all' updates all subscriptions (excluding subscriptions).
+    auto_update_sub  true or false                              Turn automatic update subscription on or off.
+    list             None                           Optional    List all subscription information.
+    auto_start       true or false                  Optional    Enable or disable auto-start on boot (defaults to true).
+    status           None                           Optional    View Clash-related information.
+    proxy            true or false                  Optional    Enable or disable proxy (defaults to true); this command must be executed using 'source'.
+    gateway          true or false                  Optional    Enable or disable gateway (defaults to true)."
 main_msg="Invalid command. Type 'help' to view available commands."
 
 # 函数：中文提示函数
@@ -242,8 +263,9 @@ chinese_language(){
     menu_ui="========= ClashUI相关功能 ========="
     menu_ui_option1="1. 安装/切换ClashUI yacd"
     menu_ui_option2="2. 安装/切换ClashUI dashboard"
-    menu_ui_option3="3. 更新ClashUI"
-    menu_ui_option4="4. 卸载ClashUI"
+    menu_ui_option3="3. 安装/切换ClashUI zashboard"
+    menu_ui_option4="4. 更新ClashUI"
+    menu_ui_option5="5. 卸载ClashUI"
     menu_subscription="========== Clash订阅相关功能 =========="
     menu_subscription_option1="1. 添加Clash订阅"
     menu_subscription_option2="2. 修改Clash订阅"
@@ -303,7 +325,7 @@ chinese_language(){
     download_path_msg="下载地址："
     get_version_failed_msg="获取版本失败"
     install_equal_versions_warn_msg="新安装版本与当前版本相同"
-    install_ui_parameter_failed_msg="参数错误，只能为 dashboard 或 yacd，默认为当前安装版本"
+    install_ui_parameter_failed_msg="参数错误，只能为 dashboard 或 yacd 或 zashboard，默认为当前安装版本"
     clash_running_warn_msg="Clash服务已运行"
     clash_not_running_warn_msg="Clash服务未启动"
     clash_start_msg="正在启动Clash服务"
@@ -320,7 +342,8 @@ chinese_language(){
     add_sub_parameter_failed_msg="格式错误：格式《订阅名称::订阅地址(或本地文件路径)::订阅更新时间（小时,可为空）》"
     delete_sub_success_msg="删除订阅信息成功"
     update_sub_success_msg="更新订阅信息成功"
-    auto_update_sub_success_msg="自动更新订阅设置成功"
+    auto_update_sub_off_success_msg="自动更新订阅已关闭"
+    auto_update_sub_on_success_msg="自动更新订阅已开启"
     update_default_sub_failed_msg="当前使用默认配置，无法更新"
     update_local_sub_failed_msg="该配置为本地配置，已跳过该操作"
     not_sub_exists_msg="不存在此订阅"
@@ -352,29 +375,34 @@ chinese_language(){
     confg_key_error_msg="变量不存在"
     help_msg="
       命令                   参数                         备注
-    install         版本             可为空     安装Clash，默认为最新版本
-    uninstall       空                          卸载Clash同时同时删除相关配置
-    update          版本             可为空     更新Clash，默认为最新版本
-    install_ui      dashboard或yacd  可为空     安装ClashUI界面，默认安装dashboard
-    uninstall_ui    空               可为空     卸载ClashUI
-    update_ui       dashboard或yacd  可为空     更新或更换ClashUI，默认当前使用UI
-    update_script                               更新clash-for-linux脚本
-    start           订阅名称         可为空     启动Clash，默认，使用当前订阅配置
-    stop            空                          停止Clash运行
-    restart         订阅名称         可为空     重启Clash，默认使用当前订阅配置
-    reload          订阅名称         可为空     重载Clash，默认使用当前订阅配置
-    add             订阅信息                    添加或修改订阅信息：格式《订阅名称::订阅地址(或本地文件路径)::订阅更新时间（小时,可为空）》
-    del             订阅名称                    删除订阅
-    update_sub      订阅名称或all    可为空     更新订阅文件，默认更新当前使用订阅，参数为all时更新所有订阅（不包括本地订阅）
-    auto_update_sub true或false                 开启或关闭自动更新订阅
-    list            空                          查询所有订阅信息
-    auto_start      true或false      可为空     启用或禁用开机自启动功能，默认为true
-    status          空                          查看Clash相关信息
-    proxy           true或false      可为空     启用或禁用本机代理，默认为true，此命令需要使用source运行
-    gateway         true或false      可为空     启用或禁用网关，默认为true"
+    install         版本                       可为空     安装Clash，默认为最新版本
+    uninstall       空                                    卸载Clash同时同时删除相关配置
+    update          版本                       可为空     更新Clash，默认为最新版本
+    install_ui      dashboard或yacd或zashboard 可为空     安装ClashUI界面，默认安装dashboard
+    uninstall_ui    空                         可为空     卸载ClashUI
+    update_ui       dashboard或yacd或zashboard 可为空     更新或更换ClashUI，默认当前使用UI
+    update_script                                         更新clash-for-linux脚本
+    start           订阅名称                   可为空     启动Clash，默认，使用当前订阅配置
+    stop            空                                    停止Clash运行
+    restart         订阅名称                   可为空     重启Clash，默认使用当前订阅配置
+    reload          订阅名称                   可为空     重载Clash，默认使用当前订阅配置
+    add             订阅信息                              添加或修改订阅信息：格式《订阅名称::订阅地址(或本地文件路径)::订阅更新时间（小时,可为空）》
+    del             订阅名称                              删除订阅
+    update_sub      订阅名称或all              可为空     更新订阅文件，默认更新当前使用订阅，参数为all时更新所有订阅（不包括本地订阅）
+    auto_update_sub true或false                           开启或关闭自动更新订阅
+    list            空                                    查询所有订阅信息
+    auto_start      true或false                可为空     启用或禁用开机自启动功能，默认为true
+    status          空                                    查看Clash相关信息
+    proxy           true或false                可为空     启用或禁用本机代理，默认为true，此命令需要使用source运行
+    gateway         true或false                可为空     启用或禁用网关，默认为true"
     main_msg="无效命令，相关命令输入help进行查看"
 }
-
+# 获取值
+get_dict_value() {
+    dict_prefix="$1"
+    key="$2"
+    eval "echo \"\$${dict_prefix}_${key}\""
+}
 # 函数：判断指定节是否存在
 # 参数：
 #   $1: section - 指定节
@@ -575,119 +603,57 @@ find_subscribe_config() {
     fi
     find_ini "${sec}" "${key}" "${clashtool_config_path}"
 }
-
-# 函数：添加yaml
-# 参数：
-#   $1: key - 变量名
-#   $2: value - 变量值
-#   $3: file - 配置文件路径
-add_yaml() {
+# 检查配置项是否存在
+# 参数: $1=键路径, $2=配置文件路径
+# 返回值: 0=存在, 1=不存在
+config_exists() {
     key="$1"
-    value="$2"
-    file="$3"
-    if [ -n "$(tail -c 1 $file)" ]; then
-        echo >> "$file"
-    fi
-    echo "$key: $value" >> "$file"
+    file="$2"
+    
+    # 直接使用 yq 检查键是否存在，不转换为 JSON
+    "$yq_path" e ".$key | tag == \"!!null\" | not" "$file" 2>/dev/null | grep -q "true"
 }
 
-# 函数：删除yaml
-# 参数：
-#   $1: key - 变量名
-#   $2: file - 配置文件路径
+# 删除 YAML 配置项
+# 参数: $1=键路径, $2=配置文件路径
+# 返回值: 0=成功, 1=失败
 delete_yaml() {
-    local key="$1"
-    local file="$2"
-    local local temp_file="${file}.tmp"
-
-    # 使用 awk 删除指定的 key 及其值
-    awk -v key="$key" '
-    BEGIN { in_section = 0; }
-    {
-        # 查找目标键，并进入删除模式
-        if ($0 ~ "^" key ":") {
-            in_section = 1
-            next
-        } else if (in_section) {
-            # 如果该键的值是多行，继续删除
-            if ($0 ~ /^[ \t-]/ || $0 ~ /^$/) {
-                next
-            } else {
-                # 退出删除模式
-                in_section = 0
-            }
-        }
-        # 保留非目标键的行
-        print $0
-    }
-    ' "$file" > "$temp_file" && mv $temp_file "$file"
+    key="$1"
+    file="$2"
+    
+    # 直接删除，不检查是否存在（yq 会自动处理不存在的键）
+    "$yq_path" e "del(.$key)" -i "$file" 2>/dev/null
 }
-# 函数：更新yaml
-# 参数：
-#   $1: key - 变量名
-#   $2: value - 变量值
-#   $3: file - 配置文件路径
-update_yaml(){
+
+# 更新 YAML 配置项
+# 参数: $1=键路径, $2=值, $3=配置文件路径
+# 返回值: 0=成功, 1=失败
+update_yaml() {
     key="$1"
     value="$2"
     file="$3"
-    local temp_file="${file}.tmp"
-    # 使用 awk 直接修改文件
-    awk -v key="$key" -v value="$value" '
-    BEGIN {
-        in_section = 0
-    }
-    {
-        if ($0 ~ "^" key ":") {
-            in_section = 1
-            next
-        } else if (in_section) {
-            if ($0 ~ /^[ \t-]/ || $0 ~ /^$/) {
-                next
-            } else {
-                in_section = 0
-                print key ": " value
-            }
-        }
-        print $0
-    }
-    ' "$file" > temp_file && mv $temp_file "$file"
+    
+    # 直接使用 yq 的赋值功能，让 yq 自动处理类型
+    "$yq_path" e ".$key = ${value}" -i "$file" 2>/dev/null
 }
-# 函数：查找yaml
-# 参数：
-#   $1: key - 变量名
-#   $2: file - 配置文件路径
 
+# 查找 YAML 配置项值
+# 参数: $1=键路径, $2=配置文件路径
+# 输出: 配置项的值（如果存在）
 find_yaml() {
     key="$1"
     file="$2"
-
-    awk -v key="$key" -v value="$value" '
-    BEGIN {
-        in_section = 0
-    }
-    {
-        if ($0 ~ "^" key ":") {
-            in_section = 1
-            print substr($0, index($0, ":") + 2)
-        } else if (in_section) {
-            if ($0 ~ /^[ \t-]/ || $0 ~ /^$/) {
-                print $0
-            } else {
-                in_section = 0
-            }
-        }
-    }
-    ' "$file"
+    
+    # 直接输出 YAML 值
+    "$yq_path" e ".$key" "$file" 2>/dev/null
 }
 
 # 函数：删除用户Clash配置
 # 参数：
 #   $1: key - 订阅名称
 delete_user_config() {
-    key="$1"
     # 使用 sed 删除键的范围，不包括终点行
-    delete_yaml "$key" "$user_config_path"
+    delete_yaml "$1" "$user_config_path"
 }
 
 # 函数：添加或修改用户Clash配置
@@ -695,20 +661,10 @@ delete_user_config() {
 #   $1: key - 订阅名称
 #   $2: val - 订阅值
 update_user_config() {
-    key="$1"
-    value="$2"
     temp_file="${user_config_path}.tmp"
-    for temp_key in $clash_config_keys; do
-        if [ "$temp_key" = "$key" ] && [ -n "$value" ]; then
-            # 如果新值不为空，则更新临时文件中的值
-            echo "${temp_key}: ${value}" >> "$temp_file"
-        elif grep -Eq "^${temp_key}:" "$user_config_path"; then
-            # 如果原文件存在则把相关信息复制到临时文件
-            value=$(find_user_config "$temp_key")
-            echo "${temp_key}: ${value}" >> "$temp_file"
-        fi
-    done
-    check_conf "$temp_file"
+    cp "$user_config_path" "$temp_file"
+    update_yaml "$1" "$2" "$temp_file"
+    check_config "$temp_file"
     mv "$temp_file" "$user_config_path"
 }
 
@@ -720,29 +676,6 @@ update_user_config() {
 find_user_config(){
     key="$1"
     find_yaml "$key" "$user_config_path"
-}
-
-# 函数：合并用户和订阅的Clash配置
-# 参数：
-#   $1: sub_config_path - 订阅配置文件路径
-merge_clash_config() {
-    sub_config_path="$1"
-    gateway_status=$(find_clashtool_config "gateway")
-    temp_file="${config_path}.tmp"
-    for temp_key in $clash_config_keys; do
-        if grep -Eq "^${temp_key}:" "$user_config_path"; then
-            value=$(find_user_config "$temp_key")
-            echo "${temp_key}: ${value}" >> "$temp_file"
-        elif [ "$gateway_status" = "true" ] && grep -Eq "^${temp_key}:" "$gateway_config_path"; then
-            value=$(find_yaml "$temp_key" "$gateway_config_path")
-            echo "${temp_key}: ${value}" >> "$temp_file"
-        elif grep -Eq "^${temp_key}:" "$sub_config_path"; then
-            value=$(find_yaml "$temp_key" "$sub_config_path")
-            echo "${temp_key}: ${value}" >> "$temp_file"
-        fi
-    done
-    check_conf "$temp_file"
-    mv "$temp_file" "$config_path"
 }
 
 # 通用消息函数
@@ -1004,15 +937,19 @@ require() {
     install_procedure tar
     # 检查并安装curl
     install_procedure curl
-    # 检查安装unzip，竟然有linux没预安装
+    # 检查安装unzip
     install_procedure unzip
-    # 检查安装unzip，竟然有linux没预安装
+    # 检查安装unzip
     install_procedure gunzip
 }
 # 函数：初始化配置
 init_config() {
     normal "$init_config_start_msg"
-    
+    # # 检查并创建 clash根配置 目录
+    # root_clash_dir=$(dirname $root_confg_path)
+    # if [ ! -d $root_clash_dir ]; then
+    #     mkdir -p "${root_clash_dir}"
+    # fi
     # 检查并创建 clash 目录
     if [ ! -d $clash_dir ]; then
         mkdir -p "${clash_dir}"
@@ -1043,7 +980,9 @@ init_config() {
         cat <<EOF > "${clashtool_config_path}"
 [clashtool]
 ui=dashboard
-version=
+yq_version=
+mmdb_version=
+clash_version=
 gateway=false
 auto_start=false
 auto_update_sub=true
@@ -1105,45 +1044,20 @@ dns:
       - 240.0.0.0/4
 EOF
     fi
-    # 检查并下载 Country.mmdb 文件
-    if [ ! -f "${config_dir}/Country.mmdb" ]; then
-        echo "Country.mmdb文件不存在"
-        api_url="https://api.github.com/repos/Dreamacro/maxmind-geoip/releases/latest"
-        country_version=$(curl -k -s "$api_url" | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v' '{print $2}')
-        country_version=${country_version:-"20241012"}
-        download "${config_dir}/Country.mmdb" "https://github.com/Dreamacro/maxmind-geoip/releases/download/${country_version}/Country.mmdb" "Country.mmdb" true
-    fi
+#     # 检查并创建根clash配置
+#     if [ -f "$root_confg_path" ]; then
+#         mv "$root_confg_path" "${root_confg_path}.bak"
+#     fi
+#     cat <<EOF > "$root_confg_path"
+# mixed-port: 7890
+# safe-paths:
+#   - /root/.config/mihomo
+#   - ${clash_dir}
+#   - ${config_dir}
+#   - ${clash_ui_dir}
+# EOF
     success "$init_config_success_msg"
 }
-
-# 函数：根新配置
-update_config(){
-    current_version=120
-    if [ -f "${clash_path}.bak" ]; then
-        current_version=$(grep '^# version:' "${clash_path}.bak" | head -1 | sed 's/# version://;s/\.//g' )
-        current_version=$(expr $current_version + 0)
-    fi
-    if [ $current_version -lt 120 ]; then
-        # 备份用户配置文件
-        cp -r $config_dir "${config_dir}.bak"
-        # 重命名用户文件
-        mv $config_path "$user_config_path"
-        # 重新初始化文件，补全缺少的网关配置
-        init_config
-        # 更改clashtool脚本部分配置文件
-        sed -i "s/^httpPort=/http_port=/" $clashtool_config_path
-        sed -i "s/^socksPort=/socks_port=/" $clashtool_config_path 
-        sed -i "s/^autoStart=/auto_start=/" $clashtool_config_path 
-        sed -i "s/^autoUpdateSub=/auto_update_sub=/" $clashtool_config_path 
-        sed -i '/^\s*$/d' $clashtool_config_path
-        update_clashtool_config 'gateway' "false"
-        # 重新创建服务文件解决使用系统服务启动时无法使用脚本结束
-        del_service_file
-        create_service_file
-        success "$migrate_config_success_msg"
-    fi
-}
-
 
 # 函数：下载通用脚本
 # 参数：
@@ -1189,25 +1103,84 @@ download(){
     done
 }
 
+get_repo_version(){
+    api_url="https://api.github.com/repos/$1/releases/latest"
+    version=$(curl -k -s $api_url | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v?' '{print $2}')
+    echo $version
+}
+
 # 函数：下载clash
 # 参数：$1: version - Clash版本
 download_clash(){
     version=$1
     # 获取系统型号
     get_platform
-    # 获取配置中当前安装的版本
-    current=$(find_clashtool_config 'version')
-    if [ -n "$current" ];then
-        normal "${current_version_msg}${current}"
-    fi
     # 没有指定版本则更新最新版本
     if [ -z "$version" ]; then
         # 获取clash最新版本号
-        api_url="https://api.github.com/repos/${clash_repo}/releases/latest"
-        version=$(curl -k -s $api_url | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v' '{print $2}')
+        version=$(get_repo_version "$repo_clash")
         if [ -z "$version" ]; then
             failed "$get_version_failed_msg"
         fi
+    fi
+    # 要安装的版本
+    normal "${latest_version_msg}${version}"
+    # 获取配置中当前安装的版本
+    current=$(find_clashtool_config 'clash_version')
+    if [ -n "$current" ];then
+        normal "${current_version_msg}${current}"
+    fi
+    # 判断版本是否相等
+    if [ "${current}" = "${version}" ]; then
+        warn "$install_equal_versions_warn_msg"
+    fi
+    temp_releases_file=$(echo "$releases_file_clash" | sed "s/:platform:/${platform}/g" | sed "s/:version:/${version}/g")
+    url="https://github.com/${repo_clash}/releases/download/${temp_releases_file}"
+    download_name=$(get_download_filename "$url")
+    temp_file_path="${clash_dir}/${download_name}"
+    # 下载clash
+    download "${temp_file_path}" "$url" "$download_name"
+    normal "${install_start_msg} Clash"
+    # 解压clash
+    temp_file_dir="${clash_dir}/temp_clash"
+    decompression "$temp_file_path" "$temp_file_dir"
+    # 查找clash文件
+    find_result=$(find "$temp_file_dir" -type f \( -name "*clash*" -o -name "*mihomo*" \) -print)
+    if [ -z "$find_result" ]; then
+        # 删除下载和解压缩的文件
+        rm -rf "$temp_file_path"
+        rm -rf "$temp_file_dir"
+        failed "${file_does_not_exist} clash"
+    fi
+    # 重命名clash
+    mv "$find_result" "$clash_path"
+    # 删除下载的压缩文件
+    rm -rf "$temp_file_path"
+    # 删除解压的文件
+    rm -rf "$temp_file_dir"
+    # 赋予运行权限
+    chmod +x "$clash_path"
+    # 向clash配置文件写入当前版本
+    update_clashtool_config 'clash_version' "$version"
+}
+
+download_yq(){
+    version=$1
+    # 获取系统型号
+    get_platform
+    
+    # 没有指定版本则更新最新版本
+    if [ -z "$version" ]; then
+        # 获取yq最新版本号
+        version=$(get_repo_version "$repo_yq")
+        if [ -z "$version" ]; then
+            failed "$get_version_failed_msg"
+        fi
+    fi
+    # 获取当前版本
+    current=$(find_clashtool_config 'yq_version')
+    if [ -n "$current" ];then
+        normal "${current_version_msg}${current}"
     fi
     # 要安装的版本
     normal "${latest_version_msg}${version}"
@@ -1215,51 +1188,93 @@ download_clash(){
     if [ "${current}" = "${version}" ]; then
         warn "$install_equal_versions_warn_msg"
     fi
-    temp_clash_releases_file=$(echo "$clash_releases_file" | sed "s/:platform:/${platform}/g" | sed "s/:version:/${version}/g")
-    clash_url="https://github.com/${clash_repo}/releases/download/${temp_clash_releases_file}"
-    download_name=$(get_download_filename "$clash_url")
-    temp_clash_path="${clash_dir}/${download_name}"
-    # 下载clash
-    download "${temp_clash_path}" "$clash_url" "$download_name"
-    normal "${install_start_msg} Clash"
-    # 解压clash
-    temp_clash_dir="${clash_dir}/temp_clash"
-    decompression "$temp_clash_path" "$temp_clash_dir"
-    # 查找clash文件
-    find_result=$(find "$temp_clash_dir" -type f \( -name "*clash*" -o -name "*mihomo*" \) -print)
-    if [ -z "$find_result" ]; then
-        # 删除下载和解压缩的文件
-        rm -rf "$temp_clash_path"
-        rm -rf "$temp_clash_dir"
-        failed "${file_does_not_exist} clash"
-    fi
-    # 重命名clash
-    mv "$find_result" "$clash_path"
-    # 删除下载的压缩文件
-    rm -rf "$temp_clash_path"
-    # 删除解压的文件
-    rm -rf "$temp_clash_dir"
+    temp_releases_file=$(echo "$releases_file_yq" | sed "s/:platform:/${platform}/g" | sed "s/:version:/${version}/g")
+    url="https://github.com/${repo_yq}/releases/download/${temp_releases_file}"
+    download_name=$(get_download_filename "$url")
+    temp_file_path="${clash_dir}/${download_name}"
+    # 下载
+    download "${temp_file_path}" "$url" "$download_name"
+    normal "${install_start_msg} yq"
+    # 重命名
+    mv "$temp_file_path" "$yq_path"
     # 赋予运行权限
-    chmod +x "$clash_path"
-    # 向clash配置文件写入当前版本
-    update_clashtool_config 'version' "$version"
+    chmod +x "$yq_path"
+    update_clashtool_config 'yq_version' "$version"
+    success "yq $install_success_msg"
+}
+
+download_mmdb(){
+    version=$1
+    # 获取系统型号
+    get_platform
+    
+    # 没有指定版本则更新最新版本
+    if [ -z "$version" ]; then
+        # 获取mmdb最新版本号
+        version=$(get_repo_version "$repo_mmdb")
+        if [ -z "$version" ]; then
+            failed "$get_version_failed_msg"
+        fi
+    fi
+    # 获取当前版本
+    current=$(find_clashtool_config 'mmdb_version')
+    if [ -n "$current" ];then
+        normal "${current_version_msg}${current}"
+    fi
+    # 要安装的版本
+    normal "${latest_version_msg}${version}"
+    # 判断版本是否相等
+    if [ "${current}" = "${version}" ]; then
+        warn "$install_equal_versions_warn_msg"
+    fi
+    temp_releases_file=$(echo "$releases_file_mmdb" | sed "s/:platform:/${platform}/g" | sed "s/:version:/${version}/g")
+    url="https://github.com/${repo_mmdb}/releases/download/${temp_releases_file}"
+    download_name=$(get_download_filename "$url")
+    temp_file_path="${clash_dir}/${download_name}"
+    # 下载
+    download "${temp_file_path}" "$url" "$download_name"
+    normal "${install_start_msg} mmdb"
+    # 重命名
+    mv "$temp_file_path" "${config_dir}/Country.mmdb"
+
+    update_clashtool_config 'mmdb_version' "$version"
+    success "mmdb $install_success_msg"
 }
 
 clear(){
+    all=$1
     # 如果已安装则报错
     if [ -f "$clash_path" ];then
         failed "Clash $was_install_msg"
     fi
     # 如果存在残余则清零
     if [ -d "$clash_dir" ];then
-        rm -rf "$clash_dir"
+        # 删除Clash所有相关文件
+        if [ "$all" = "all" ];then
+            rm -rf "${clash_dir}"
+        else
+            find "$clash_dir" -mindepth 1 -maxdepth 1 \
+            -not -path "$logs_dir" \
+            -not -path "$config_dir" \
+            -exec rm -rf {} +
+            # 向clash配置文件写入版本为空
+            update_clashtool_config 'yq_version' ""
+            update_clashtool_config 'mmdb_version' ""
+            update_clashtool_config 'clash_version' ""
+        fi
     fi
+    # # 删除根配置文件目录
+    # if [ -f "${root_confg_path}.bak" ]; then
+    #     mv "${root_confg_path}.bak" "$root_confg_path"
+    # else
+    #     rm -rf $(dirname $root_confg_path)
+    # fi
 }
 
 # 函数：安装clash内核
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 install() {
-    version=$1
+    clash_version=$1
     # 如果已安装则报错
     if [ -f "$clash_path" ];then
         failed "Clash $was_install_msg"
@@ -1272,8 +1287,16 @@ install() {
     init_config
     # 复制当前脚本到安装目录
     cp "$(readlink -f "$0")" "$script_path"
-    # 下载安装clash
-    download_clash "${version}"
+    # 下载 yq
+    if [ ! -f "$yq_path" ];then
+        download_yq "$yq_version"
+    fi
+    # 下载 mmdb
+    if [ ! -f "${config_dir}/Country.mmdb" ];then
+        download_mmdb "$mmdb_version"
+    fi
+    # 下载安装 clash
+    download_clash "$clash_version"
     success "Clash $install_success_msg"
 }
 
@@ -1281,7 +1304,7 @@ install() {
 # 参数: $1：all -（可为空），默认不删除配置信息
 uninstall() {
     all=$1
-    # 开始删除clash
+    # 开始卸载clash
     normal "$uninstall_start_msg Clash"
     # 关闭clash
     if $state; then
@@ -1298,18 +1321,12 @@ uninstall() {
     # 删除服务脚本
     del_service_file
 
-    # 删除Clash所有相关文件
-    if [ "$all" = "all" ];then
-        rm -rf "${clash_dir}"
-    else
-        rm "$clash_path"
-        # 向clash配置文件写入版本为空
-        update_clashtool_config 'version' ""
-    fi
+    # 删除clash文件
+    rm -rf $clash_path
+    clear "$all"
     success "Clash $uninstall_success_msg"
 }
 
-# 函数：更新clash
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 update() {
     version=$1
@@ -1321,8 +1338,6 @@ update() {
     fi
 }
 
-# 函数：安装ClashUI
-# 参数: $1：ui_name - 订阅名称 （可为空），默认为当前使用订阅
 install_ui() {
     if [ -d $clash_ui_dir ];then
         failed "ClashUI $was_install_msg"
@@ -1333,39 +1348,32 @@ install_ui() {
         ui_name=$(find_clashtool_config 'ui')
     fi
     # 下载UI安装包
-    if [ "${ui_name}" = "dashboard" ]; then
-        update_clashtool_config 'ui' "dashboard"
-        ui_name="clash-dashboard-gh-pages"
-        url="$dashboard_url"
-    elif [ "${ui_name}" = "yacd" ]; then
-        # 在clashtool配置文件中写入ui
-        update_clashtool_config 'ui' "yacd"
-        ui_name="yacd-gh-pages"
-        url="$yacd_url"
-    else
+    url=$(get_dict_value 'ui' "$ui_name" )
+    if [ -z "$url" ]; then
         failed "$install_ui_parameter_failed_msg"
     fi
-    download_name="$(get_download_filename "$url")"
-    temp_clash_ui_path="${clash_dir}/${download_name}"
-    download "$temp_clash_ui_path" "$url" "$download_name"    
+    download_name=$(get_download_filename "$url")
+    temp_file_path="${clash_dir}/${download_name}"
+    download "$temp_file_path" "$url" "$download_name"    
     normal "${install_start_msg} ClashUI"
     # 解压
-    temp_clash_ui_dir=${clash_dir}/temp_clash_ui
-    decompression "$temp_clash_ui_path" "$temp_clash_ui_dir"
-    find_result=$(find "$temp_clash_ui_dir" -type f -name "index.html" -print -quit)
+    temp_file_dir=${clash_dir}/temp_file_dir
+    decompression "$temp_file_path" "$temp_file_dir"
+    find_result=$(find "$temp_file_dir" -type f -name "index.html" -print -quit)
     if [ -z "$find_result" ]; then
         # 删除已下载和解压的文件
-        rm -rf "$temp_clash_ui_path"
-        rm -rf "$temp_clash_ui_dir"
+        rm -rf "$temp_file_path"
+        rm -rf "$temp_file_dir"
         failed ""
     fi
     # 重命名
     mv $(dirname "$find_result") "$clash_ui_dir"
     # 删除已下载和解压的文件
-    rm -rf "$temp_clash_ui_path"
-    rm -rf "$temp_clash_ui_dir"
+    rm -rf "$temp_file_path"
+    rm -rf "$temp_file_dir"
     # 设置ui配置
     update_user_config 'external-ui' "$clash_ui_dir"
+    update_clashtool_config 'ui' "$ui_name"
     success "ClashUI $install_success_msg"
     # 如果正在运行则重新启动
     if $state;then
@@ -1392,7 +1400,7 @@ uninstall_ui(){
 }
 
 # 函数：更新或更换ClashUI
-# 参数：$1 - UI类型（yacd或dashboard）可为空，默认当前使用的ui
+# 参数：$1 - UI类型（yacd或dashboard或zashboard）可为空，默认当前使用的ui
 update_ui(){
     if [ ! -d "$clash_ui_dir" ];then
         failed "ClashUI $not_install_msg"
@@ -1428,8 +1436,6 @@ update_script(){
     if [ -d $clash_dir ];then
         cp "${current_path}.temp" $script_path
         chmod 755 $script_path
-        # 升级配置相关文件
-        sh $script_path update_config
     fi
     rm "${current_path}.temp"
     success $update_script_success_msg
@@ -1455,7 +1461,17 @@ loading_config(){
             fi
             sub_config_path="${subscribe_dir}/${sub_name}.yaml"
             # 合并用户配置文件和订阅配置文件生成Clash配置文件
-            merge_clash_config "$sub_config_path"
+            temp_file_path="${config_path}.tmp.yaml"
+            $yq_path eval-all '. as $item ireduce ({}; . *+ $item) | (.. | select(tag == "!!seq")) |= unique' \
+                "$sub_config_path" "$user_config_path" "$sub_config_path" > "$temp_file_path"
+            
+            gateway_status=$(find_clashtool_config "gateway")
+            if [ "$gateway_status" = "true" ] && grep -Eq "^${temp_key}:" "$gateway_config_path"; then
+                $yq_path eval-all '. as $item ireduce ({}; . *+ $item) | (.. | select(tag == "!!seq")) |= unique' \
+                "$temp_file_path" "$gateway_config_path" "$temp_file_path" > "$temp_file_path"
+            fi
+            check_config "$temp_file_path"
+            mv "$temp_file_path" "$config_path"
         else
              failed "$not_sub_exists_msg"
         fi  
@@ -1635,10 +1651,10 @@ list() {
 
 # 函数：校验配置文件
 # 参数：$1:file 文件路径
-check_conf(){
+check_config(){
     file=$1
     expected="configuration file $file test is successful"
-    req=$($clash_path -t -f "$file")
+    req=$($clash_path -d "$config_dir" -t -f "$file")
     # 提取最后一行输出的记录
     last_line=$(echo "$req" | awk 'END {print}')
     # 检查最后一行文本是否匹配期望的文本
@@ -1694,7 +1710,7 @@ add(){
             failed "$not_sub_exists_msg"
         fi
         # 校验配置文件
-        check_conf "$url"
+        check_config "$url"
         # 复制文件到配置目录
         cp "$url" "${subscribe_dir}/${name}.yaml"
         # 如果配置文件不存在此信息则添加
@@ -1793,7 +1809,7 @@ download_sub() {
         # 下载订阅文件
         download "${temp_sub_path}" "${url}" "${name}" $sub_proxy
         # 检查订阅文件是否有效
-        check_conf "$temp_sub_path"
+        check_config "$temp_sub_path"
         # 如果已存在则备份原先订阅
         if [ -f "${subscribe_dir}/${name}.yaml" ];then
             mv "${subscribe_dir}/${name}.yaml" "${subscribe_backup_dir}/${name}$(date +'%Y%m%d%H%M').yaml"
@@ -1809,9 +1825,12 @@ download_sub() {
 auto_update_sub() {
     enable=$1
     sub_name=$2
-    if [ "$enable" = 'true' ] || [ "$enable" = 'false' ];then
-        update_clashtool_config "auto_update_sub" "$enable"
-        success $auto_update_sub_success_msg
+    if [ "$enable" = 'true' ]; then
+        update_clashtool_config "auto_update_sub" true
+        success "$auto_update_sub_on_success_msg"
+    elif [ "$enable" = 'false' ];then
+        update_clashtool_config "auto_update_sub" false
+        success "$auto_update_sub_off_success_msg"
     elif [ "$enable" = '' ];then
         enable=$(find_subscribe_config 'auto_update_sub')
     else
@@ -2231,17 +2250,18 @@ menu() {
             echo "$menu_end"
             read -p "$prompt_choice_msg" choice
             case $choice in
-                1|2) 
+                1|2|3) 
                     ui="yacd"
                     [ $choice=2 ] && ui="dashboard"
+                    [ $choice=3 ] && ui="zashboard"
                     if [ -d "$clash_ui_dir" ];then
                         $0 update_ui $ui
                     else
                         $0 install_ui $ui
                     fi
                     ;;
-                3) $0 update_ui;;
-                4) $0 uninstall_ui;;
+                4) $0 update_ui;;
+                5) $0 uninstall_ui;;
                 'r') break;;
                 *) echo "$menu_invalid_choice";;
             esac
@@ -2403,7 +2423,7 @@ main() {
             check_and_elevate "$@"
             $fun "$var"
             ;;
-        "uninstall"|"update"|"install_ui"|"uninstall_ui"|"update_ui"|"start"|"stop"|"restart"|"reload"|"add"|"list"|"del"|"update_sub"|"auto_update_sub"|"auto_start"|"update_script"|"gateway"|"clashtool"|"userconfig"|"update_config")
+        "uninstall"|"update"|"install_ui"|"uninstall_ui"|"update_ui"|"start"|"stop"|"restart"|"reload"|"add"|"list"|"del"|"update_sub"|"auto_update_sub"|"auto_start"|"update_script"|"gateway"|"clashtool"|"userconfig")
             if [ ! -f "$clash_path" ];then
                 failed $not_install_msg
             fi
@@ -2418,7 +2438,7 @@ main() {
             ;;
         "clear")
             check_and_elevate "$@"
-            clear
+            clear "$var"
             ;;
         "proxy")
             failed "$proxy_not_source_command_msg" false

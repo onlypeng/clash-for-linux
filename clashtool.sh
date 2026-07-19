@@ -119,6 +119,15 @@ if command -v readlink >/dev/null 2>&1; then
     _resolved_path=$(readlink -f "$SCRIPT_PATH" 2>/dev/null)
     [ -n "$_resolved_path" ] && [ -f "$_resolved_path" ] && SCRIPT_PATH="$_resolved_path"
 fi
+# 检测管道安装模式（curl ... | sh）
+# 当 $0 是 shell 解释器路径时，说明通过管道执行，无法定位本地脚本
+_is_piped_install=false
+case "$0" in
+    sh|bash|dash|*/sh|*/bash|*/dash)
+        _is_piped_install=true
+        SCRIPT_PATH=""
+        ;;
+esac
 # UI安装目录
 ui_install_dir="${install_dir}/ui"
 # 日志目录
@@ -211,13 +220,15 @@ _load_module() {
     _lm_name="$1"
     _LOAD_MODULE_OK=false
     _LOADED_MODULE_PATH=""
-    # 1. 本地存在则直接加载
-    _lm_local="$(dirname "$SCRIPT_PATH")/$_lm_name"
-    if [ -f "$_lm_local" ]; then
-        . "$_lm_local"
-        _LOAD_MODULE_OK=true
-        _LOADED_MODULE_PATH="$_lm_local"
-        return 0
+    # 1. 本地存在则直接加载（管道模式下跳过，SCRIPT_PATH 为空）
+    if [ -n "$SCRIPT_PATH" ]; then
+        _lm_local="$(dirname "$SCRIPT_PATH")/$_lm_name"
+        if [ -f "$_lm_local" ]; then
+            . "$_lm_local"
+            _LOAD_MODULE_OK=true
+            _LOADED_MODULE_PATH="$_lm_local"
+            return 0
+        fi
     fi
     # 2. 本地不存在，尝试从 GitHub 在线加载（静默）
     if [ -n "$module_local_missing_msg" ]; then
@@ -1996,23 +2007,46 @@ install() {
     init_config
     
     # 复制当前脚本到安装目录
-    cp "$(readlink -f "$0")" "$script_path"
-    # 同时复制 TUI 模块到安装目录（确保符号链接调用时能找到）
-    _tui_src="$(dirname "$(readlink -f "$0")")/clashtool_tui.sh"
-    [ -f "$_tui_src" ] && cp "$_tui_src" "${install_dir}/clashtool_tui.sh"
-    # 同时复制 i18n 目录到安装目录（多语言支持）
-    _i18n_src_dir="$(dirname "$(readlink -f "$0")")/i18n"
-    if [ -d "$_i18n_src_dir" ]; then
+    if [ "$_is_piped_install" = "true" ]; then
+        # 管道安装模式：从 GitHub 在线下载脚本和依赖模块
+        _ct_base_url="${github_proxy_url}https://raw.githubusercontent.com/onlypeng/clash-for-linux/main"
+        # 下载 clashtool.sh 主脚本
+        curl -s --max-time 30 -o "$script_path.download" "${_ct_base_url}/clashtool.sh" 2>/dev/null
+        if [ -f "$script_path.download" ] && [ -s "$script_path.download" ] && grep -q '^#' "$script_path.download" 2>/dev/null; then
+            mv "$script_path.download" "$script_path"
+            chmod 755 "$script_path"
+        else
+            rm -f "$script_path.download" 2>/dev/null
+            failed "在线下载 clashtool.sh 失败"
+        fi
+        # 下载 clashtool_tui.sh 模块
+        curl -s --max-time 20 -o "${install_dir}/clashtool_tui.sh.download" "${_ct_base_url}/clashtool_tui.sh" 2>/dev/null
+        if [ -f "${install_dir}/clashtool_tui.sh.download" ] && [ -s "${install_dir}/clashtool_tui.sh.download" ] && grep -q '^#' "${install_dir}/clashtool_tui.sh.download" 2>/dev/null; then
+            mv "${install_dir}/clashtool_tui.sh.download" "${install_dir}/clashtool_tui.sh"
+            chmod 644 "${install_dir}/clashtool_tui.sh"
+        else
+            rm -f "${install_dir}/clashtool_tui.sh.download" 2>/dev/null
+        fi
+    else
+        # 正常模式：复制本地脚本
+        cp "$(readlink -f "$0")" "$script_path"
+        # 同时复制 TUI 模块到安装目录（确保符号链接调用时能找到）
+        _tui_src="$(dirname "$(readlink -f "$0")")/clashtool_tui.sh"
+        [ -f "$_tui_src" ] && cp "$_tui_src" "${install_dir}/clashtool_tui.sh"
+    fi
+    # 同时复制/下载 i18n 目录到安装目录（多语言支持）
+    _i18n_src_dir="$(dirname "$(readlink -f "$0" 2>/dev/null)")/i18n"
+    if [ "$_is_piped_install" != "true" ] && [ -d "$_i18n_src_dir" ]; then
         mkdir -p "${install_dir}/i18n"
         cp "${_i18n_src_dir}/"*.sh "${install_dir}/i18n/" 2>/dev/null
         chmod 644 "${install_dir}/i18n/"*.sh 2>/dev/null
     else
-        # 本地无 i18n 目录，从 GitHub 在线下载常用语言文件
+        # 本地无 i18n 目录或管道模式：从 GitHub 在线下载常用语言文件
         mkdir -p "${install_dir}/i18n"
         for _i18n_lang in zh_CN en; do
-            _i18n_dl_url="https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/i18n/${_i18n_lang}.sh"
+            _i18n_dl_url="${github_proxy_url}https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/i18n/${_i18n_lang}.sh"
             _i18n_dl_temp="${install_dir}/i18n/${_i18n_lang}.sh.download"
-            curl -s --max-time 20 -o "$_i18n_dl_temp" "${github_proxy_url}${_i18n_dl_url}" 2>/dev/null
+            curl -s --max-time 20 -o "$_i18n_dl_temp" "$_i18n_dl_url" 2>/dev/null
             if [ -f "$_i18n_dl_temp" ] && [ -s "$_i18n_dl_temp" ] && grep -q '^#' "$_i18n_dl_temp" 2>/dev/null; then
                 mv "$_i18n_dl_temp" "${install_dir}/i18n/${_i18n_lang}.sh"
                 chmod 644 "${install_dir}/i18n/${_i18n_lang}.sh"
@@ -4306,6 +4340,13 @@ check_and_elevate() {
         return 0
     fi
 
+    # 管道安装模式：无法 exec 自身（无脚本文件），提示用户重新执行
+    if [ "$_is_piped_install" = "true" ]; then
+        printf "%b\n" "${COLOR_RED}管道安装模式需要 root 权限，请使用以下命令重新执行：${COLOR_RESET}"
+        printf "%b\n" "${COLOR_YELLOW}  curl -fsSL https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh | sudo sh${COLOR_RESET}"
+        exit 1
+    fi
+
     if has_sudo; then
         # 非交互 shell 下先测试 passwordless sudo，避免 exec 后 sudo 失败无法捕获错误
         if ! is_interactive_shell && ! sudo -n true 2>/dev/null; then
@@ -5003,6 +5044,10 @@ _dispatch_group() {
 main() {
     fun=$1
     var=$2
+    # 管道安装模式：无参数时自动触发安装（curl ... | sh）
+    if [ "$_is_piped_install" = "true" ] && [ -z "$fun" ]; then
+        fun="install"
+    fi
     # 加载国际化语言模块（自动检测或使用用户配置）
     _main_lang=$(detect_language)
     load_i18n "$_main_lang"

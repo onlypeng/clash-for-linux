@@ -25,7 +25,25 @@
 
 ### 一键在线安装（推荐）
 
-将本项目克隆或下载到本地后执行安装命令，脚本会自动完成核心、yq、GeoIP 数据库和 Web UI 的部署：
+**管道安装模式**：无需克隆仓库，一行命令直接安装。脚本会自动从 GitHub 下载主脚本、TUI 模块、i18n 语言文件，并完成核心、yq、GeoIP 数据库和 Web UI 的部署：
+
+```bash
+# 系统级安装（root，装到 /opt/clash）
+curl -fsSL https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh | sudo sh
+
+# 或用户级安装（普通用户，装到 ~/.local/clash）
+curl -fsSL https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh | sh
+```
+
+> **管道模式说明**：
+> - 无参数时自动触发安装流程
+> - 主脚本、TUI 模块、i18n 文件均从 GitHub 在线下载到安装目录
+> - 若需要 root 权限，请使用 `sudo sh`（脚本会提示重新执行命令）
+> - 安装完成后通过 `clashtool` 命令使用，无需 clone 整个仓库
+
+### 克隆仓库安装
+
+将本项目克隆或下载到本地后执行安装命令：
 
 ```bash
 # 下载项目

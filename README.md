@@ -7,9 +7,10 @@
 **核心特点**：
 
 - **POSIX 兼容**：以 `#!/bin/sh` 编写，兼容 bash/dash
+- **一键安装**：支持 `curl | sh` 管道安装模式，无需克隆仓库即可部署
 - **双模式**：TUI 交互式菜单 + CLI 命令行，统一入口
 - **模块化**：TUI 逻辑独立到 `clashtool_tui.sh`，多语言翻译独立到 `i18n/` 目录，主程序通过 source 加载
-- **在线加载**：TUI 和 i18n 模块支持本地检测，本地缺失时自动从 GitHub 在线加载
+- **在线加载**：TUI 和 i18n 模块支持本地检测，本地缺失或管道安装时自动从 GitHub 在线加载
 - **多语言**：i18n 目录架构支持任意语言扩展，自动检测系统语言（`LANG`），可通过 `language` 变量配置
 - **分组命令**：9 大命令分组 + 5 个直接命令，语义清晰
 - **权限自适应**：root 装到 `/opt/clash`，普通用户装到 `~/.local/clash`
@@ -74,7 +75,7 @@ clashtool update core
 
 ### 仅下载脚本（不克隆仓库）
 
-如果只需要脚本本身，可以直接下载：
+如果只需要脚本本身（手动管理依赖文件），可以直接下载：
 
 ```bash
 curl -O https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh
@@ -86,11 +87,13 @@ chmod +x clashtool.sh
 sudo sh clashtool.sh install
 ```
 
+> **提示**：如需更简单的方式，直接使用上方的「管道安装模式」一行命令即可，脚本会自动下载所有依赖文件。
+>
 > **注意**：`clashtool_tui.sh` 和 `i18n/` 目录必须与 `clashtool.sh` 放在同一目录。
 > - `clashtool_tui.sh` 提供 TUI 菜单功能
 > - `i18n/` 目录包含多语言模块（`zh_CN.sh` 中文、`en.sh` 英文等）
 >
-> 若本地缺失这些模块，脚本会自动从 GitHub 在线加载（需网络）。
+> 若本地缺失这些模块，脚本会自动从 GitHub 在线加载（需网络）；管道安装模式下则全部在线下载到安装目录。
 
 ---
 
@@ -319,6 +322,7 @@ clashtool                         # 无参数进入 TUI 交互菜单
 
 | 操作 | 命令 | 说明 |
 |------|------|------|
+| 管道安装 | `curl ... \| sh` | 一键在线安装（无需克隆仓库） |
 | 全安装 | `install` | 核心 + UI（默认） |
 | 仅核心 | `install core` | 下载 Clash + yq + GeoIP |
 | 仅 UI | `install ui` | dashboard / yacd / zashboard |
@@ -328,7 +332,7 @@ clashtool                         # 无参数进入 TUI 交互菜单
 | 更新全部 | `update` | 核心 + UI |
 | 更新脚本 | `update script` | 从 GitHub 拉取最新脚本 |
 
-下载特性：GitHub 代理加速、自动重试 3 次、多架构支持。
+下载特性：GitHub 代理加速、自动重试 3 次、多架构支持、管道模式全在线部署。
 
 ### 10. 日志查看
 

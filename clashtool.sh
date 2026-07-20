@@ -200,14 +200,6 @@ COLOR_WHITE="\033[37m"
 COLOR_BOLD="\033[1m"
 COLOR_DIM="\033[2m"
 
-# Menu borders
-MENU_BORDER_TOP="╔════════════════════════════════════════════════════════════╗"
-MENU_BORDER_MID="╠════════════════════════════════════════════════════════════╣"
-MENU_BORDER_BOT="╚════════════════════════════════════════════════════════════╝"
-MENU_LINE="║"
-MENU_CONTENT_WIDTH=78
-MENU_RIGHT_COL=80
-
 # TUI constants (part 1) moved to clashtool_tui.sh
 _is_interactive_terminal() {
     command -v stty >/dev/null 2>&1 && [ -c /dev/tty ] 2>/dev/null && { stty -g </dev/tty; } >/dev/null 2>&1
@@ -481,8 +473,9 @@ config_file_not_found_msg="Configuration file not found"
 backup_list_title_msg="Available backups:"
 backup_path_msg="Backup:"
 profile_list_title_msg="Available profiles:"
-backup_select_title=" Select Backup "
-profile_select_title=" Select Profile "
+backup_select_name_required_msg="Please specify backup name"
+profile_select_name_required_msg="Please specify profile name"
+config_key_required_msg="Please specify config key"
 
 # help 行输出辅助：按显示宽度对齐
 _help_row() {
@@ -647,6 +640,13 @@ script_backup_msg="Original script backed up to: %s"
 module_local_missing_msg="Local module %s not found, loading from GitHub online..."
 module_online_load_ok_msg="%s loaded online successfully"
 module_online_load_fail_msg="%s online load failed, using built-in English text"
+piped_install_title_msg="Clash for Linux - Pipeline Installation"
+piped_install_start_msg="Starting pipeline installation..."
+piped_install_version_msg="Installing version: %s"
+piped_install_download_msg="Downloading %s..."
+piped_install_retry_msg="Retrying %s (%d/%d)..."
+piped_install_success_msg="Full clashtool installation completed successfully"
+piped_install_partial_msg="Partial installation completed, some modules failed: %s"
 
 # 检测系统语言，返回语言代码（如 zh_CN / en / zh_TW）
 # 检测优先级：language 变量 > use_chinese 变量 > LANG 环境变量
@@ -1891,6 +1891,87 @@ post_install_verify() {
     return 0
 }
 
+# 优化的管道安装函数：下载完整版本的 clashtool（主脚本 + TUI + i18n）
+# 参数: $1 - 目标脚本路径
+# 返回: 0=成功, 1=失败
+_install_piped_full() {
+    _ipf_script_path="$1"
+    _ipf_install_dir=$(dirname "$_ipf_script_path")
+    _ipf_success=true
+    _ipf_errors=""
+    
+    _ipf_base_url="${github_proxy_url}https://raw.githubusercontent.com/${project_repo}"
+    
+    _ipf_download_file() {
+        _df_url="$1"
+        _df_path="$2"
+        _df_name="$3"
+        _df_max_retries="${4:-3}"
+        _df_timeout="${5:-20}"
+        
+        _df_retry=0
+        _df_success=false
+        while [ "$_df_retry" -lt "$_df_max_retries" ]; do
+            rm -f "$_df_path.download" 2>/dev/null
+            if [ "$_df_retry" -gt 0 ]; then
+                warn "$(printf "$piped_install_retry_msg" "$_df_name" "$_df_retry" "$_df_max_retries")" false
+            else
+                normal "$(printf "$piped_install_download_msg" "$_df_name")"
+            fi
+            if curl -s --max-time "$_df_timeout" -o "$_df_path.download" "$_df_url" 2>/dev/null; then
+                if [ -f "$_df_path.download" ] && [ -s "$_df_path.download" ] && grep -q '^#' "$_df_path.download" 2>/dev/null; then
+                    mv "$_df_path.download" "$_df_path"
+                    _df_success=true
+                    break
+                fi
+            fi
+            _df_retry=$((_df_retry + 1))
+            [ "$_df_retry" -lt "$_df_max_retries" ] && sleep 3
+        done
+        
+        if [ "$_df_success" = "true" ]; then
+            normal "$(printf "$module_online_load_ok_msg" "$_df_name")"
+            return 0
+        else
+            rm -f "$_df_path.download" 2>/dev/null
+            _ipf_errors="${_ipf_errors}${_df_name} "
+            _ipf_success=false
+            return 1
+        fi
+    }
+    
+    normal "$(printf "$piped_install_title_msg")"
+    normal "$(printf "$piped_install_start_msg")"
+    
+    normal "$(printf "$module_local_missing_msg" "clashtool modules")"
+    
+    _ipf_download_file "${_ipf_base_url}/clashtool.sh" "$_ipf_script_path" "clashtool.sh" 3 30
+    chmod 755 "$_ipf_script_path" 2>/dev/null
+    
+    _ipf_download_file "${_ipf_base_url}/clashtool_tui.sh" "${_ipf_install_dir}/clashtool_tui.sh" "clashtool_tui.sh" 3 20
+    chmod 644 "${_ipf_install_dir}/clashtool_tui.sh" 2>/dev/null
+    
+    mkdir -p "${_ipf_install_dir}/i18n" 2>/dev/null
+    for _ipf_lang in zh_CN en; do
+        _ipf_download_file "${_ipf_base_url}/i18n/${_ipf_lang}.sh" "${_ipf_install_dir}/i18n/${_ipf_lang}.sh" "i18n/${_ipf_lang}.sh" 3 15
+        chmod 644 "${_ipf_install_dir}/i18n/${_ipf_lang}.sh" 2>/dev/null
+    done
+    
+    if [ "$_ipf_success" = "false" ]; then
+        failed "$(printf "$piped_install_partial_msg" "$_ipf_errors")"
+        return 1
+    fi
+    
+    _ipf_ver=$(grep '^# version:' "$_ipf_script_path" | head -1 | sed 's/# version://')
+    if [ -n "$_ipf_ver" ]; then
+        normal "$(printf "$piped_install_version_msg" "$_ipf_ver")"
+    fi
+    
+    normal "$(printf "$piped_install_success_msg")"
+    
+    return 0
+}
+
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 install() {
     clash_version=$1
@@ -1920,52 +2001,20 @@ install() {
     
     # 复制当前脚本到安装目录
     if [ "$_is_piped_install" = "true" ]; then
-        # 管道安装模式：从 GitHub 在线下载脚本和依赖模块
-        _ct_base_url="${github_proxy_url}https://raw.githubusercontent.com/onlypeng/clash-for-linux/main"
-        # 下载 clashtool.sh 主脚本
-        curl -s --max-time 30 -o "$script_path.download" "${_ct_base_url}/clashtool.sh" 2>/dev/null
-        if [ -f "$script_path.download" ] && [ -s "$script_path.download" ] && grep -q '^#' "$script_path.download" 2>/dev/null; then
-            mv "$script_path.download" "$script_path"
-            chmod 755 "$script_path"
-        else
-            rm -f "$script_path.download" 2>/dev/null
-            failed "在线下载 clashtool.sh 失败"
-        fi
-        # 下载 clashtool_tui.sh 模块
-        curl -s --max-time 20 -o "${install_dir}/clashtool_tui.sh.download" "${_ct_base_url}/clashtool_tui.sh" 2>/dev/null
-        if [ -f "${install_dir}/clashtool_tui.sh.download" ] && [ -s "${install_dir}/clashtool_tui.sh.download" ] && grep -q '^#' "${install_dir}/clashtool_tui.sh.download" 2>/dev/null; then
-            mv "${install_dir}/clashtool_tui.sh.download" "${install_dir}/clashtool_tui.sh"
-            chmod 644 "${install_dir}/clashtool_tui.sh"
-        else
-            rm -f "${install_dir}/clashtool_tui.sh.download" 2>/dev/null
-        fi
+        _install_piped_full "$script_path"
     else
         # 正常模式：复制本地脚本
         cp "$(readlink -f "$0")" "$script_path"
         # 同时复制 TUI 模块到安装目录（确保符号链接调用时能找到）
         _tui_src="$(dirname "$(readlink -f "$0")")/clashtool_tui.sh"
         [ -f "$_tui_src" ] && cp "$_tui_src" "${install_dir}/clashtool_tui.sh"
-    fi
-    # 同时复制/下载 i18n 目录到安装目录（多语言支持）
-    _i18n_src_dir="$(dirname "$(readlink -f "$0" 2>/dev/null)")/i18n"
-    if [ "$_is_piped_install" != "true" ] && [ -d "$_i18n_src_dir" ]; then
-        mkdir -p "${install_dir}/i18n"
-        cp "${_i18n_src_dir}/"*.sh "${install_dir}/i18n/" 2>/dev/null
-        chmod 644 "${install_dir}/i18n/"*.sh 2>/dev/null
-    else
-        # 本地无 i18n 目录或管道模式：从 GitHub 在线下载常用语言文件
-        mkdir -p "${install_dir}/i18n"
-        for _i18n_lang in zh_CN en; do
-            _i18n_dl_url="${github_proxy_url}https://raw.githubusercontent.com/$project_repo/i18n/${_i18n_lang}.sh"
-            _i18n_dl_temp="${install_dir}/i18n/${_i18n_lang}.sh.download"
-            curl -s --max-time 20 -o "$_i18n_dl_temp" "$_i18n_dl_url" 2>/dev/null
-            if [ -f "$_i18n_dl_temp" ] && [ -s "$_i18n_dl_temp" ] && grep -q '^#' "$_i18n_dl_temp" 2>/dev/null; then
-                mv "$_i18n_dl_temp" "${install_dir}/i18n/${_i18n_lang}.sh"
-                chmod 644 "${install_dir}/i18n/${_i18n_lang}.sh"
-            else
-                rm -f "$_i18n_dl_temp" 2>/dev/null
-            fi
-        done
+        # 同时复制 i18n 目录到安装目录（多语言支持）
+        _i18n_src_dir="$(dirname "$(readlink -f "$0" 2>/dev/null)")/i18n"
+        if [ -d "$_i18n_src_dir" ]; then
+            mkdir -p "${install_dir}/i18n"
+            cp "${_i18n_src_dir}/"*.sh "${install_dir}/i18n/" 2>/dev/null
+            chmod 644 "${install_dir}/i18n/"*.sh 2>/dev/null
+        fi
     fi
     
     # 步骤4: 下载 yq
@@ -3686,45 +3735,28 @@ list_backups(){
 # 结果通过全局变量 SELECTED_BACKUP 返回
 # 返回值: 0=成功选择, 1=取消/无备份
 select_backup(){
-    SELECTED_BACKUP=""
-    if [ ! -d "$backup_dir" ]; then
-        warn "$backup_list_empty_msg" false
+    SELECTED_BACKUP="$1"
+    if [ -z "$SELECTED_BACKUP" ]; then
+        warn "$backup_select_name_required_msg" false
         return 1
     fi
-    # 收集备份文件名到位置参数
-    set --
-    for _sb_file in $(ls -t "$backup_dir"/*.tar.gz 2>/dev/null); do
-        set -- "$@" "$(basename "$_sb_file" .tar.gz)"
-    done
-    if [ $# -eq 0 ]; then
-        warn "$backup_list_empty_msg" false
+    if [ ! -f "${backup_dir}/${SELECTED_BACKUP}.tar.gz" ]; then
+        warn "$backup_not_exist_msg" false
         return 1
     fi
-    # 显示选择菜单
-    menu_dispatch "$backup_select_title" "$@" "$menu_return"
-    case "$MENU_RESULT" in
-        BACK|QUIT|''|*[!0-9]*) return 1 ;;
-        *)
-            # 获取选择的备份名
-            _sb_idx=0
-            for _sb_item in "$@"; do
-                [ "$_sb_idx" = "$MENU_RESULT" ] && break
-                _sb_idx=$((_sb_idx + 1))
-            done
-            SELECTED_BACKUP="$_sb_item"
-            return 0
-            ;;
-    esac
+    return 0
 }
 
 restore_backup(){
-    if ! select_backup; then
-        return
+    local backup_name="$1"
+    if [ -z "$backup_name" ]; then
+        warn "$backup_select_name_required_msg" false
+        return 1
     fi
-    local backup_path="${backup_dir}/${SELECTED_BACKUP}.tar.gz"
+    local backup_path="${backup_dir}/${backup_name}.tar.gz"
     if [ ! -f "$backup_path" ]; then
         failed "$backup_not_exist_msg"
-        return
+        return 1
     fi
     # 交互式终端兼容的确认方式
     if _is_interactive_terminal; then
@@ -3745,13 +3777,15 @@ restore_backup(){
 }
 
 delete_backup(){
-    if ! select_backup; then
-        return
+    local backup_name="$1"
+    if [ -z "$backup_name" ]; then
+        warn "$backup_select_name_required_msg" false
+        return 1
     fi
-    local backup_path="${backup_dir}/${SELECTED_BACKUP}.tar.gz"
+    local backup_path="${backup_dir}/${backup_name}.tar.gz"
     if [ ! -f "$backup_path" ]; then
         failed "$backup_not_exist_msg"
-        return
+        return 1
     fi
     rm -f "$backup_path"
     success "$backup_delete_success_msg"
@@ -3836,39 +3870,17 @@ list_profiles(){
     ls -1 "$profiles_dir" 2>/dev/null || echo "$profile_not_exist_msg"
 }
 
-# 选择配置文件（列表选择）
-# 结果通过全局变量 SELECTED_PROFILE 返回
-# 返回值: 0=成功选择, 1=取消/无配置文件
 select_profile(){
-    SELECTED_PROFILE=""
-    if [ ! -d "$profiles_dir" ]; then
+    SELECTED_PROFILE="$1"
+    if [ -z "$SELECTED_PROFILE" ]; then
+        warn "$profile_select_name_required_msg" false
+        return 1
+    fi
+    if [ ! -f "${profiles_dir}/${SELECTED_PROFILE}" ]; then
         warn "$profile_not_exist_msg" false
         return 1
     fi
-    # 收集配置文件名到位置参数
-    set --
-    for _sp_file in "$profiles_dir"/*; do
-        [ -f "$_sp_file" ] && set -- "$@" "$(basename "$_sp_file")"
-    done
-    if [ $# -eq 0 ]; then
-        warn "$profile_not_exist_msg" false
-        return 1
-    fi
-    # 显示选择菜单
-    menu_dispatch "$profile_select_title" "$@" "$menu_return"
-    case "$MENU_RESULT" in
-        BACK|QUIT|''|*[!0-9]*) return 1 ;;
-        *)
-            # 获取选择的配置文件名
-            _sp_idx=0
-            for _sp_item in "$@"; do
-                [ "$_sp_idx" = "$MENU_RESULT" ] && break
-                _sp_idx=$((_sp_idx + 1))
-            done
-            SELECTED_PROFILE="$_sp_item"
-            return 0
-            ;;
-    esac
+    return 0
 }
 
 create_profile(){
@@ -3895,25 +3907,29 @@ create_profile(){
 }
 
 switch_profile(){
-    if ! select_profile; then
-        return
+    local profile_name="$1"
+    if [ -z "$profile_name" ]; then
+        warn "$profile_select_name_required_msg" false
+        return 1
     fi
-    local profile_path="${profiles_dir}/${SELECTED_PROFILE}"
+    local profile_path="${profiles_dir}/${profile_name}"
     if [ ! -f "$profile_path" ]; then
         failed "$profile_not_exist_msg"
-        return
+        return 1
     fi
     cp "$profile_path" "$main_config_path" && success "$profile_switch_success_msg" || failed "$profile_switch_failed_msg"
 }
 
 delete_profile(){
-    if ! select_profile; then
-        return
+    local profile_name="$1"
+    if [ -z "$profile_name" ]; then
+        warn "$profile_select_name_required_msg" false
+        return 1
     fi
-    local profile_path="${profiles_dir}/${SELECTED_PROFILE}"
+    local profile_path="${profiles_dir}/${profile_name}"
     if [ ! -f "$profile_path" ]; then
         failed "$profile_not_exist_msg"
-        return
+        return 1
     fi
     rm -f "$profile_path" && success "$profile_delete_success_msg"
 }
@@ -3964,84 +3980,6 @@ rules_add(){
     else
         failed "$rules_add_failed_msg"
     fi
-}
-
-rules_main(){
-    while true; do
-        menu_dispatch "$menu_rules_title" \
-            "$menu_rules_option1" \
-            "$menu_rules_option2" \
-            "$menu_rules_option3" \
-            "$menu_return" \
-            "$menu_exit"
-        case "$MENU_RESULT" in
-            0) tui_clear; list_rules; pause_prompt;;
-            1) tui_clear; rules_edit; pause_prompt;;
-            2) tui_clear; rules_add; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
-        esac
-    done
-}
-
-profiles_main(){
-    while true; do
-        menu_dispatch "$menu_profiles_title" \
-            "$menu_profiles_option1" \
-            "$menu_profiles_option2" \
-            "$menu_profiles_option3" \
-            "$menu_profiles_option4" \
-            "$menu_return" \
-            "$menu_exit"
-        case "$MENU_RESULT" in
-            0) tui_clear; list_profiles; pause_prompt;;
-            1) tui_clear; create_profile; pause_prompt;;
-            2) tui_clear; switch_profile; pause_prompt;;
-            3) tui_clear; delete_profile; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
-        esac
-    done
-}
-
-backup_main(){
-    while true; do
-        menu_dispatch "$menu_backup_title" \
-            "$menu_backup_option1" \
-            "$menu_backup_option2" \
-            "$menu_backup_option3" \
-            "$menu_backup_option4" \
-            "$menu_return" \
-            "$menu_exit"
-        case "$MENU_RESULT" in
-            0) backup_config; pause_prompt;;
-            1) list_backups; pause_prompt;;
-            2) restore_backup; pause_prompt;;
-            3) delete_backup; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
-        esac
-    done
-}
-
-health_main(){
-    while true; do
-        menu_dispatch "$menu_health_title" \
-            "$menu_health_option1" \
-            "$menu_health_option2" \
-            "$menu_return" \
-            "$menu_exit"
-        case "$MENU_RESULT" in
-            0) tui_clear; health_check; pause_prompt;;
-            1) tui_clear; toggle_auto_recovery; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
-        esac
-    done
 }
 
 # tools moved to clashtool_tui.sh
@@ -4348,57 +4286,35 @@ config_view() {
     printf "%s\n" "$_cv_content"
 }
 
-# 选择配置键（从 clash_config_keys 列表）
-# 结果通过全局变量 SELECTED_CONFIG_KEY 返回
-# 返回值: 0=成功选择, 1=取消
 select_config_key() {
-    SELECTED_CONFIG_KEY=""
-    # 将空格分隔的键名转为位置参数
-    _old_ifs="$IFS"
-    IFS=' '
-    set -f
-    set -- $clash_config_keys
-    set +f
-    IFS="$_old_ifs"
-    if [ $# -eq 0 ]; then
-        warn "$config_no_keys_msg" false
+    SELECTED_CONFIG_KEY="$1"
+    if [ -z "$SELECTED_CONFIG_KEY" ]; then
+        warn "$config_key_required_msg" false
         return 1
     fi
-    menu_dispatch "$config_select_key_title" "$@" "$menu_return"
-    case "$MENU_RESULT" in
-        BACK|QUIT|''|*[!0-9]*) return 1 ;;
-        *)
-            _sck_idx=0
-            for _sck_item in "$@"; do
-                [ "$_sck_idx" = "$MENU_RESULT" ] && break
-                _sck_idx=$((_sck_idx + 1))
-            done
-            SELECTED_CONFIG_KEY="$_sck_item"
-            return 0
-            ;;
-    esac
+    return 0
 }
 
-# 设置/修改配置项
 config_set() {
-    if ! select_config_key; then
+    local _cs_key="$1"
+    local _cs_val="$2"
+    if [ -z "$_cs_key" ]; then
+        warn "$config_key_required_msg" false
         return 1
     fi
-    _cs_key="$SELECTED_CONFIG_KEY"
-    # 获取当前值作为默认值
-    _cs_current=$(find_user_config "$_cs_key")
-    # 构建提示信息
-    _cs_prompt=$(printf "$config_set_prompt_val_msg" "$_cs_key")
-    get_input "$_cs_prompt" "$_cs_current"
-    if [ "$GET_INPUT_CANCELED" = "true" ]; then
-        warn "$input_canceled_msg" false; return 1
+    if [ -z "$_cs_val" ]; then
+        _cs_val=$(find_user_config "$_cs_key")
+        _cs_prompt=$(printf "$config_set_prompt_val_msg" "$_cs_key")
+        get_input "$_cs_prompt" "$_cs_val"
+        if [ "$GET_INPUT_CANCELED" = "true" ]; then
+            warn "$input_canceled_msg" false; return 1
+        fi
+        _cs_val="$GET_INPUT_RESULT"
     fi
-    _cs_val="$GET_INPUT_RESULT"
     if [ -z "$_cs_val" ]; then
         warn "$config_set_failed_msg" false
         return 1
     fi
-    # 验证输入值
     if ! validate_config_value "$_cs_key" "$_cs_val"; then
         return 1
     fi
@@ -4410,63 +4326,36 @@ config_set() {
     fi
 }
 
-# 删除配置项
 config_del() {
+    local _cd_key="$1"
+    if [ -z "$_cd_key" ]; then
+        warn "$config_key_required_msg" false
+        return 1
+    fi
     if [ ! -f "$user_config_path" ]; then
         warn "$config_no_keys_msg" false
         return 1
     fi
-    # 获取 user.yaml 中已有的顶层键列表
-    _cd_keys=$(grep '^[^[:space:]#]' "$user_config_path" 2>/dev/null | sed 's/:.*//' | sed 's/[[:space:]]*$//')
-    if [ -z "$_cd_keys" ]; then
-        warn "$config_no_keys_msg" false
-        return 1
+    _cd_confirm_msg=$(printf "$config_del_confirm_msg" "$_cd_key")
+    if _is_interactive_terminal; then
+        tui_confirm "$_cd_confirm_msg"
+        _cd_confirm="$TUI_CONFIRM_RESULT"
+    else
+        printf "%b" "${COLOR_YELLOW}${_cd_confirm_msg} (y/n): ${COLOR_RESET}"
+        read -r _cd_choice
+        case "$_cd_choice" in
+            y|Y|yes|YES) _cd_confirm="YES" ;;
+            *) _cd_confirm="NO" ;;
+        esac
     fi
-    # 转换为位置参数
-    _old_ifs="$IFS"
-    IFS="
-"
-    set -f
-    set -- $_cd_keys
-    set +f
-    IFS="$_old_ifs"
-    if [ $# -eq 0 ]; then
-        warn "$config_no_keys_msg" false
-        return 1
+    if [ "$_cd_confirm" = "YES" ]; then
+        delete_user_config "$_cd_key"
+        if [ $? -eq 0 ]; then
+            success "$config_del_success_msg"
+        else
+            failed "$config_del_failed_msg" false
+        fi
     fi
-    menu_dispatch "$config_del_prompt_msg" "$@" "$menu_return"
-    case "$MENU_RESULT" in
-        BACK|QUIT|''|*[!0-9]*) return 1 ;;
-        *)
-            _cd_idx=0
-            for _cd_item in "$@"; do
-                [ "$_cd_idx" = "$MENU_RESULT" ] && break
-                _cd_idx=$((_cd_idx + 1))
-            done
-            _cd_key="$_cd_item"
-            # 确认删除
-            _cd_confirm_msg=$(printf "$config_del_confirm_msg" "$_cd_key")
-            if _is_interactive_terminal; then
-                tui_confirm "$_cd_confirm_msg"
-                _cd_confirm="$TUI_CONFIRM_RESULT"
-            else
-                printf "%b" "${COLOR_YELLOW}${_cd_confirm_msg} (y/n): ${COLOR_RESET}"
-                read -r _cd_choice
-                case "$_cd_choice" in
-                    y|Y|yes|YES) _cd_confirm="YES" ;;
-                    *) _cd_confirm="NO" ;;
-                esac
-            fi
-            if [ "$_cd_confirm" = "YES" ]; then
-                delete_user_config "$_cd_key"
-                if [ $? -eq 0 ]; then
-                    success "$config_del_success_msg"
-                else
-                    failed "$config_del_failed_msg" false
-                fi
-            fi
-            ;;
-    esac
 }
 
 # 查看原始配置文件
@@ -4694,8 +4583,8 @@ _dispatch_group() {
         case "$_dg_sub" in
             view|"") config_view ;;
             get) config "$_dg_arg" ;;
-            set) config "$_dg_arg" ;;
-            del) config_del ;;
+            set) config_set "$_dg_arg" "$4" ;;
+            del) config_del "$_dg_arg" ;;
             edit) config_edit_raw ;;
             tool) clashtool "$_dg_arg" ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "config" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -4884,10 +4773,20 @@ _dispatch_group() {
         ;;
     tools)
         case "$_dg_sub" in
-            logs) logs_menu ;;
-            backup) backup ;;
-            restore) list_backups ;;
+            logs) view_logs ;;
+            backup) backup_config ;;
+            list-backups) list_backups ;;
+            restore) restore_backup "$_dg_arg" ;;
+            delete-backup) delete_backup "$_dg_arg" ;;
+            profiles) list_profiles ;;
+            create-profile) create_profile "$_dg_arg" ;;
+            switch-profile) switch_profile "$_dg_arg" ;;
+            delete-profile) delete_profile "$_dg_arg" ;;
+            rules) list_rules ;;
+            add-rule) rules_add "$_dg_arg" ;;
+            edit-rules) rules_edit ;;
             health) health_check ;;
+            toggle-recovery) toggle_auto_recovery ;;
             symlink) repair_symlink && post_install_hint ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "tools" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
         esac

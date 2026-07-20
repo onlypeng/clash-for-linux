@@ -237,7 +237,7 @@ _load_module() {
     if [ -n "$module_local_missing_msg" ]; then
         normal "$(printf "$module_local_missing_msg" "$_lm_name")" 2>/dev/null
     fi
-    _lm_url="https://raw.githubusercontent.com/$project_repo/$_lm_name"
+    _lm_url="${github_proxy_url}https://raw.githubusercontent.com/$project_repo/$_lm_name"
     _lm_temp="${TMPDIR:-/tmp}/clashtool_${_lm_name}.$$"
     if command -v curl >/dev/null 2>&1; then
         curl -s --max-time 20 -o "$_lm_temp" "$_lm_url" 2>/dev/null
@@ -1348,6 +1348,10 @@ check_url(){
 is_sourced() {
     # 使用POSIX兼容方式检测是否以source运行
     # 如果 $0 是 shell 名称（sh/bash/ksh 等），说明是 source 执行
+    # 管道安装模式（curl | sh）中 $0 也是 shell 名称，但不是 source 执行，需排除
+    if [ "$_is_piped_install" = "true" ]; then
+        return 1
+    fi
     case "$0" in
         sh|bash|ksh|dash|-sh|-bash|-ksh|-dash|*/sh|*/bash|*/ksh|*/dash)
             return 0

@@ -208,167 +208,6 @@ MENU_LINE="║"
 MENU_CONTENT_WIDTH=78
 MENU_RIGHT_COL=80
 
-# === Menu Text Definitions (English defaults) ===
-# These are overwritten by i18n modules (e.g., i18n/zh_CN.sh)
-
-# Main menu
-menu_header=" Clash for Linux - Management Tool v1.2.4 "
-menu_main_option0=" [0] Service Ctrl   - Start/Stop/Restart/Reload"
-menu_main_option1=" [1] Auto Start    - Status & Toggle"
-menu_main_option2=" [2] Gateway       - Status & Toggle"
-menu_main_option3=" [3] Local Proxy   - Status & Toggle"
-menu_main_option4=" [4] Sub & Config  - Manage Subscriptions & Config"
-menu_main_option5=" [5] Proxy Select  - Groups/Servers/Delay/Status"
-menu_main_option6=" [6] Install       - Install/Update/Uninstall Core & UI"
-menu_main_option7=" [7] Tools         - Logs/Backup/Rules/Profiles/Health"
-menu_main_option8=" [8] Status        - Display Clash Information"
-menu_main_option9=" [9] Update        - Check/Update Script"
-
-# Service sub-menu
-menu_service_title=" Service Control "
-menu_service_option1=" [1] Start Clash"
-menu_service_option2=" [2] Stop Clash"
-menu_service_option3=" [3] Restart Clash"
-menu_service_option4=" [4] Reload Configuration"
-
-# Install sub-menu
-menu_install_title=" Install & Setup "
-menu_install_option1=" [1] Install Clash Core"
-menu_install_option2=" [2] Update Clash Core"
-menu_install_option3=" [3] Uninstall Clash Core"
-menu_install_option4=" [4] Uninstall All (including configs)"
-menu_install_option5=" [5] Install/Switch yacd"
-menu_install_option6=" [6] Install/Switch dashboard"
-menu_install_option7=" [7] Install/Switch zashboard"
-menu_install_option8=" [8] Update Current UI"
-menu_install_option9=" [9] Uninstall UI"
-
-# Proxy selection sub-menu
-menu_proxy_title=" Proxy Selection "
-menu_proxy_option1=" [1] Select Proxy        - Choose group & server"
-menu_proxy_option2=" [2] Proxy Status        - View current selections"
-menu_proxy_option3=" [3] Test Delay          - Test group/server delay"
-menu_proxy_option4=" [4] URL Test            - Test connectivity"
-
-# Subscription sub-menu
-menu_subscription_title=" Subscription Management "
-menu_subscription_option1=" [1] Add New Subscription"
-menu_subscription_option2=" [2] Modify Subscription"
-menu_subscription_option3=" [3] Delete Subscription"
-menu_subscription_option4=" [4] List All Subscriptions"
-menu_subscription_option5=" [5] Update Subscription"
-menu_subscription_option6=" [6] Disable Auto-update"
-menu_subscription_option7=" [7] Enable Auto-update"
-
-# Config editor sub-menu
-menu_config_title=" Clash Config Editor "
-menu_config_option1=" [1] View All Config Items"
-menu_config_option2=" [2] Set/Modify Config Item"
-menu_config_option3=" [3] Delete Config Item"
-menu_config_option4=" [4] View Raw Config File"
-menu_config_option5=" [5] Edit Config File (GUI/nano/vim/vi)"
-
-# Tools sub-menu
-menu_tools_title=" Tools & Maintenance "
-menu_tools_option1=" [1] Logs         - View/Search/Filter/Follow Logs"
-menu_tools_option2=" [2] Backup      - Backup/Restore Configuration"
-menu_tools_option3=" [3] Rules       - Manage Clash Rules"
-menu_tools_option4=" [4] Profiles    - Multiple Configuration Profiles"
-menu_tools_option5=" [5] Health      - Health Check & Auto-Recovery"
-
-# Backup sub-menu
-menu_backup_title=" Backup & Restore "
-menu_backup_option1=" [1] Backup Current Configuration"
-menu_backup_option2=" [2] List Backups"
-menu_backup_option3=" [3] Restore from Backup"
-menu_backup_option4=" [4] Delete Backup"
-
-# Rules sub-menu
-menu_rules_title=" Rules Management "
-menu_rules_option1=" [1] List Available Rules"
-menu_rules_option2=" [2] Enable/Disable Rules"
-menu_rules_option3=" [3] Add Custom Rule"
-
-# Profiles sub-menu
-menu_profiles_title=" Profile Management "
-menu_profiles_option1=" [1] List Profiles"
-menu_profiles_option2=" [2] Create New Profile"
-menu_profiles_option3=" [3] Switch Profile"
-menu_profiles_option4=" [4] Delete Profile"
-
-# Health sub-menu
-menu_health_title=" Health Check & Recovery "
-menu_health_option1=" [1] View Health Status"
-menu_health_option2=" [2] Toggle Auto-Recovery"
-
-# Logs sub-menu
-menu_logs_title=" Log Viewer "
-menu_logs_option1=" [1] View Recent  - Last 50 lines"
-menu_logs_option2=" [2] Search       - Search by keyword"
-menu_logs_option3=" [3] Filter       - Filter by log level"
-menu_logs_option4=" [4] Follow       - Follow log in real-time"
-menu_logs_option5=" [5] View All     - Show entire log"
-
-# Log level filter sub-menu
-menu_logs_level_title=" Log Level Filter "
-menu_logs_level_debug=" [1] DEBUG"
-menu_logs_level_info=" [2] INFO"
-menu_logs_level_warning=" [3] WARNING"
-menu_logs_level_error=" [4] ERROR"
-menu_logs_level_silent=" [5] SILENT"
-
-# Combined subscription & config sub-menu
-menu_sub_config_title=" Subscriptions & Configuration "
-menu_sub_config_option1=" [1] Add Subscription"
-menu_sub_config_option2=" [2] Modify Subscription"
-menu_sub_config_option3=" [3] Delete Subscription"
-menu_sub_config_option4=" [4] List Subscriptions"
-menu_sub_config_option5=" [5] Update Subscription"
-menu_sub_config_option6=" [6] Disable Auto-update"
-menu_sub_config_option7=" [7] Enable Auto-update"
-menu_sub_config_option8=" [8] View Config Items"
-menu_sub_config_option9=" [9] Set/Modify Config Item"
-menu_sub_config_option10=" [a] Delete Config Item"
-menu_sub_config_option11=" [b] Edit Config File (GUI/nano/vim/vi)"
-
-# Global menu items
-menu_return=" [Esc] Return to Previous Menu"
-menu_exit=" [Ctrl+C] Exit"
-menu_invalid_choice=" Invalid choice! Please try again."
-
-# === Menu Rendering Functions ===
-
-# show_menu - Non-interactive menu renderer (fallback mode)
-# Arguments: title, menu items...
-# Output: draws a static menu with border
-show_menu() {
-    printf "\033[H"
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_TOP}${COLOR_RESET}"
-    _sm_title="$1"
-    _sm_tw=$(str_display_width "$_sm_title")
-    _sm_tp=$(( MENU_CONTENT_WIDTH - _sm_tw ))
-    [ "$_sm_tp" -lt 0 ] && _sm_tp=0
-    _sm_tpl=$(( _sm_tp / 2 ))
-    printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}${COLOR_BOLD}"
-    [ "$_sm_tpl" -gt 0 ] && printf "%${_sm_tpl}s" ""
-    printf "%s" "$_sm_title"
-    _sm_tpr=$(( _sm_tp - _sm_tpl ))
-    [ "$_sm_tpr" -gt 0 ] && printf "%${_sm_tpr}s" ""
-    printf "%b\n" "${COLOR_RESET}${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_MID}${COLOR_RESET}"
-    shift
-    for item in "$@"; do
-        _sm_iw=$(str_display_width "$item")
-        _sm_pad=$(( MENU_CONTENT_WIDTH - _sm_iw ))
-        [ "$_sm_pad" -lt 0 ] && _sm_pad=0
-        printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}${COLOR_WHITE}${item}${COLOR_RESET}"
-        [ "$_sm_pad" -gt 0 ] && printf "%${_sm_pad}s" ""
-        printf "%b\n" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
-    done
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_BOT}${COLOR_RESET}"
-    printf "\033[J"
-}
-
 # TUI constants (part 1) moved to clashtool_tui.sh
 _is_interactive_terminal() {
     command -v stty >/dev/null 2>&1 && [ -c /dev/tty ] 2>/dev/null && { stty -g </dev/tty; } >/dev/null 2>&1
@@ -4702,37 +4541,13 @@ config_edit_raw() {
     config_edit_file "$user_config_path"
 }
 
-# 配置编辑菜单（TUI 和 CLI 通用）
-config_menu() {
-    while true; do
-        menu_dispatch "$menu_config_title" \
-            "$menu_config_option1" \
-            "$menu_config_option2" \
-            "$menu_config_option3" \
-            "$menu_config_option4" \
-            "$menu_config_option5" \
-            "$menu_return" \
-            "$menu_exit"
-        case "$MENU_RESULT" in
-            0) tui_clear; config_view; pause_prompt;;
-            1) tui_clear; config_set; pause_prompt;;
-            2) tui_clear; config_del; pause_prompt;;
-            3) tui_clear; config_view_raw; pause_prompt;;
-            4) tui_clear; config_edit_raw; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
-        esac
-    done
-}
-
 # 参数:
-#   $1: 空 - 进入配置菜单; "key::value" - 设置值; "key" - 获取值
+#   $1: 空 - 显示所有配置; "key::value" - 设置值; "key" - 获取值
 config() {
     if [ -n "$1" ]; then
         config_operation "$1" "find_user_config" "update_user_config" "$config_key_error_msg"
     else
-        config_menu
+        config_view
     fi
 }
 
@@ -5094,13 +4909,6 @@ main() {
     # 加载国际化语言模块（自动检测或使用用户配置）
     _main_lang=$(detect_language)
     load_i18n "$_main_lang"
-    # 检测终端能力，决定是否启用 TUI 模式
-    # 仅在进入交互式菜单（无命令参数）时启用 TUI
-    if [ -z "$fun" ]; then
-        tui_detect_capability
-    else
-        TUI_ENABLED=false
-    fi
     # 判断使用的命令类型
     if is_sourced;then
         # source 模式仅支持 proxy on/off
@@ -5133,27 +4941,82 @@ main() {
         elif [ "$fun" = "help" ]; then
             show_help
         elif [ -z "$fun" ]; then
-            # 进入交互菜单
-            # 启动时检查软链接
-            if ! check_symlink && [ -f "$script_path" ]; then
-                if _is_interactive_terminal; then
-                    tui_confirm "$symlink_repair_confirm_msg"
-                    if [ "$TUI_CONFIRM_RESULT" = "YES" ]; then
-                        repair_symlink && success "$symlink_repair_success_msg"
+            # 进入 TUI 交互模式
+            # 检查并自动安装 TUI 依赖
+            _tui_ready=true
+            
+            # 检查 stty 命令（TUI 需要）
+            if ! command -v stty >/dev/null 2>&1; then
+                remind "$require_check_msg: stty not found, attempting to install..." false
+                if is_root || check_and_elevate "install" "util-linux"; then
+                    install_procedure "util-linux"
+                    if ! command -v stty >/dev/null 2>&1; then
+                        _tui_ready=false
                     fi
                 else
-                    repair_symlink 2>/dev/null
+                    _tui_ready=false
                 fi
             fi
-            # 用户级安装不需要提权进入菜单
-            if is_root; then
-                check_and_elevate "$@"
+            
+            # 检查 TUI 模块文件
+            if [ "$_tui_ready" = "true" ]; then
+                _tui_module_path="$(dirname "$(readlink -f "$0")")/clashtool_tui.sh"
+                if [ ! -f "$_tui_module_path" ]; then
+                    remind "TUI module not found, attempting to download..." false
+                    curl -s --max-time 20 -o "$_tui_module_path.download" "${github_proxy_url}https://raw.githubusercontent.com/$project_repo/clashtool_tui.sh" 2>/dev/null
+                    if [ -f "$_tui_module_path.download" ] && grep -q '^#' "$_tui_module_path.download" 2>/dev/null; then
+                        mv "$_tui_module_path.download" "$_tui_module_path"
+                        chmod 644 "$_tui_module_path"
+                    else
+                        rm -f "$_tui_module_path.download" 2>/dev/null
+                        _tui_ready=false
+                    fi
+                fi
             fi
-            # 检查 TUI 依赖（stty），缺少时提示用户安装
-            if ! command -v stty >/dev/null 2>&1; then
-                warn "$require_check_msg: stty not found, TUI disabled. Install util-linux/coreutils." false
+            
+            # 加载 TUI 模块
+            if [ "$_tui_ready" = "true" ]; then
+                if ! . "$_tui_module_path" 2>/dev/null; then
+                    _tui_ready=false
+                fi
             fi
-            menu
+            
+            # 检查终端能力
+            if [ "$_tui_ready" = "true" ]; then
+                tui_detect_capability
+                if [ "$TUI_ENABLED" = "false" ]; then
+                    _tui_ready=false
+                fi
+            fi
+            
+            # 根据检查结果决定行为
+            if [ "$_tui_ready" = "true" ]; then
+                # TUI 可用：启动交互菜单
+                # 启动时检查软链接
+                if ! check_symlink && [ -f "$script_path" ]; then
+                    if _is_interactive_terminal; then
+                        tui_confirm "$symlink_repair_confirm_msg"
+                        if [ "$TUI_CONFIRM_RESULT" = "YES" ]; then
+                            repair_symlink && success "$symlink_repair_success_msg"
+                        fi
+                    else
+                        repair_symlink 2>/dev/null
+                    fi
+                fi
+                # 用户级安装不需要提权进入菜单
+                if is_root; then
+                    check_and_elevate "$@"
+                fi
+                tui_main_menu
+            else
+                # TUI 不可用：报错退出
+                failed "TUI mode unavailable. Missing dependencies or non-interactive terminal." false
+                printf "%b\n" "${COLOR_YELLOW}Please install required dependencies or use command line mode:${COLOR_RESET}"
+                printf "%b\n" "${COLOR_YELLOW}  clashtool start|stop|restart|reload|status${COLOR_RESET}"
+                printf "%b\n" "${COLOR_YELLOW}  clashtool install|update|uninstall${COLOR_RESET}"
+                printf "%b\n" "${COLOR_YELLOW}  clashtool help${COLOR_RESET}"
+                exit 1
+            fi
         else
             printf "%b\n" "${COLOR_RED}$(printf "$unknown_command_msg" "$fun")${COLOR_RESET}"
             printf "%b\n" "${COLOR_YELLOW}${use_help_hint_msg}${COLOR_RESET}"

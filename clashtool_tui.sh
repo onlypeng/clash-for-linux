@@ -548,7 +548,7 @@ menu_dispatch() {
     # 尝试交互式菜单（支持上下导航、高亮选择、快捷键）
     # 需同时满足：/dev/tty 可用（stty 原始模式）且 stdout 是 TTY
     # 当 stdout 被重定向（如命令替换 $(...)、管道），TUI 绘制无法正常工作，
-    # 应回退到非交互模式，避免 tui_read_key 阻塞在 /dev/tty 读取
+    # 直接报错，不再回退到非交互模式
     _md_interactive=false
     if _is_interactive_terminal && [ -t 1 ]; then
         _md_interactive=true
@@ -579,81 +579,10 @@ menu_dispatch() {
                 ;;
         esac
     else
-        # 回退模式：静态菜单 + 逐行输入（适用于无 stty 的环境）
-        show_menu "$_md_title" "$@"
-        printf "%b" "${COLOR_YELLOW}${prompt_choice_msg}${COLOR_RESET}"
-        if ! read -r _md_choice; then
-            MENU_RESULT="QUIT"
-            return 0
-        fi
-        case "$_md_choice" in
-            [0-9]*)
-                if [ "$_md_choice" -ge 0 ] && [ "$_md_choice" -lt "$_md_total" ] 2>/dev/null; then
-                    _md_idx=0
-                    _md_item=""
-                    for _md_item in "$@"; do
-                        [ "$_md_idx" = "$_md_choice" ] && break
-                        _md_idx=$((_md_idx + 1))
-                    done
-                    if [ "$_md_item" = "$menu_return" ]; then
-                        MENU_RESULT="BACK"
-                    elif [ "$_md_item" = "$menu_exit" ]; then
-                        MENU_RESULT="QUIT"
-                    else
-                        MENU_RESULT="$_md_choice"
-                    fi
-                else
-                    MENU_RESULT="INVALID"
-                fi
-                ;;
-            [a-z])
-                # 字母快捷键：a=10, b=11, ...（与 TUI 模式一致）
-                _md_idx=$(printf '%d' "'$_md_choice")
-                _md_idx=$((_md_idx - 97 + 10))
-                if [ "$_md_idx" -ge 0 ] && [ "$_md_idx" -lt "$_md_total" ]; then
-                    _md_n=0
-                    _md_item=""
-                    for _md_item in "$@"; do
-                        [ "$_md_n" = "$_md_idx" ] && break
-                        _md_n=$((_md_n + 1))
-                    done
-                    if [ "$_md_item" = "$menu_return" ]; then
-                        MENU_RESULT="BACK"
-                    elif [ "$_md_item" = "$menu_exit" ]; then
-                        MENU_RESULT="QUIT"
-                    else
-                        MENU_RESULT="$_md_idx"
-                    fi
-                else
-                    MENU_RESULT="INVALID"
-                fi
-                ;;
-            [A-Z])
-                # 大写字母快捷键：A=10, B=11, ...
-                _md_idx=$(printf '%d' "'$_md_choice")
-                _md_idx=$((_md_idx - 65 + 10))
-                if [ "$_md_idx" -ge 0 ] && [ "$_md_idx" -lt "$_md_total" ]; then
-                    _md_n=0
-                    _md_item=""
-                    for _md_item in "$@"; do
-                        [ "$_md_n" = "$_md_idx" ] && break
-                        _md_n=$((_md_n + 1))
-                    done
-                    if [ "$_md_item" = "$menu_return" ]; then
-                        MENU_RESULT="BACK"
-                    elif [ "$_md_item" = "$menu_exit" ]; then
-                        MENU_RESULT="QUIT"
-                    else
-                        MENU_RESULT="$_md_idx"
-                    fi
-                else
-                    MENU_RESULT="INVALID"
-                fi
-                ;;
-            q|Q) MENU_RESULT="QUIT" ;;
-            r|R) MENU_RESULT="BACK" ;;
-            *) MENU_RESULT="INVALID" ;;
-        esac
+        # 非交互式终端：直接报错，不再回退到 show_menu
+        printf "%b\n" "${COLOR_RED}TUI mode requires an interactive terminal (stty + /dev/tty).${COLOR_RESET}"
+        printf "%b\n" "${COLOR_YELLOW}Use command line mode instead, e.g.: clashtool start|stop|status${COLOR_RESET}"
+        MENU_RESULT="QUIT"
     fi
 }
 

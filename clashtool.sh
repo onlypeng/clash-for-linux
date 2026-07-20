@@ -36,6 +36,9 @@ ui_url_yacd='https://github.com/haishanh/yacd/archive/refs/heads/gh-pages.zip'
 ui_url_dashboard='https://github.com/ayanamist/clash-dashboard/archive/refs/heads/gh-pages.zip'
 ui_url_zashboard='https://github.com/Zephyruso/zashboard/archive/refs/heads/gh-pages.zip'
 
+#本项目仓库地址
+project_repo='onlypeng/clash-for-linux/test'
+
 # ==================== 下载配置 ====================
 # 下载失败重试次数
 download_max_retries=3
@@ -234,7 +237,7 @@ _load_module() {
     if [ -n "$module_local_missing_msg" ]; then
         normal "$(printf "$module_local_missing_msg" "$_lm_name")" 2>/dev/null
     fi
-    _lm_url="https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/$_lm_name"
+    _lm_url="https://raw.githubusercontent.com/$project_repo/$_lm_name"
     _lm_temp="${TMPDIR:-/tmp}/clashtool_${_lm_name}.$$"
     if command -v curl >/dev/null 2>&1; then
         curl -s --max-time 20 -o "$_lm_temp" "$_lm_url" 2>/dev/null
@@ -2044,7 +2047,7 @@ install() {
         # 本地无 i18n 目录或管道模式：从 GitHub 在线下载常用语言文件
         mkdir -p "${install_dir}/i18n"
         for _i18n_lang in zh_CN en; do
-            _i18n_dl_url="${github_proxy_url}https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/i18n/${_i18n_lang}.sh"
+            _i18n_dl_url="${github_proxy_url}https://raw.githubusercontent.com/$project_repo/i18n/${_i18n_lang}.sh"
             _i18n_dl_temp="${install_dir}/i18n/${_i18n_lang}.sh.download"
             curl -s --max-time 20 -o "$_i18n_dl_temp" "$_i18n_dl_url" 2>/dev/null
             if [ -f "$_i18n_dl_temp" ] && [ -s "$_i18n_dl_temp" ] && grep -q '^#' "$_i18n_dl_temp" 2>/dev/null; then
@@ -2237,7 +2240,7 @@ update_script(){
     current_path=$(readlink -f "$0")
     current=$(grep '^# version:' "$current_path" | head -1 | sed 's/# version://')
     normal "${current_version_msg}$current"
-    url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh'
+    url='https://raw.githubusercontent.com/$project_repo/clashtool.sh'
     version=$(curl -s "${github_proxy_url}${url}" | grep '^# version:' | head -1 | sed 's/# version://')
     if [ -z "$version" ];then
         failed "$get_version_failed_msg"
@@ -2267,7 +2270,7 @@ update_script(){
     chmod 755 "$current_path"
 
     # 同时下载并更新 TUI 模块
-    _us_tui_url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool_tui.sh'
+    _us_tui_url='https://raw.githubusercontent.com/$project_repo/clashtool_tui.sh'
     _us_tui_temp="${current_path%/*}/clashtool_tui.sh.download"
     download "$_us_tui_temp" "$_us_tui_url" "TUI Module" 2>/dev/null
     if [ -f "$_us_tui_temp" ] && grep -q '^#' "$_us_tui_temp" 2>/dev/null; then
@@ -2281,7 +2284,7 @@ update_script(){
     _us_i18n_dir="${current_path%/*}/i18n"
     mkdir -p "$_us_i18n_dir"
     for _us_i18n_lang in zh_CN en; do
-        _us_i18n_url="https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/i18n/${_us_i18n_lang}.sh"
+        _us_i18n_url="https://raw.githubusercontent.com/$project_repo/i18n/${_us_i18n_lang}.sh"
         _us_i18n_temp="${_us_i18n_dir}/${_us_i18n_lang}.sh.download"
         download "$_us_i18n_temp" "$_us_i18n_url" "i18n/${_us_i18n_lang}" 2>/dev/null
         if [ -f "$_us_i18n_temp" ] && grep -q '^#' "$_us_i18n_temp" 2>/dev/null; then
@@ -4343,7 +4346,7 @@ check_and_elevate() {
     # 管道安装模式：无法 exec 自身（无脚本文件），提示用户重新执行
     if [ "$_is_piped_install" = "true" ]; then
         printf "%b\n" "${COLOR_RED}管道安装模式需要 root 权限，请使用以下命令重新执行：${COLOR_RESET}"
-        printf "%b\n" "${COLOR_YELLOW}  curl -fsSL https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh | sudo sh${COLOR_RESET}"
+        printf "%b\n" "${COLOR_YELLOW}  curl -fsSL https://raw.githubusercontent.com/$project_repo/clashtool.sh | sudo sh${COLOR_RESET}"
         exit 1
     fi
 
@@ -4699,7 +4702,7 @@ update_check() {
     current_path=$(readlink -f "$0")
     current=$(grep '^# version:' "$current_path" | head -1 | sed 's/# version://')
     normal "${current_version_msg}$current"
-    url='https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh'
+    url='https://raw.githubusercontent.com/$project_repo/clashtool.sh'
     version=$(curl -k -s "${github_proxy_url}${url}" | grep '^# version:' | head -1 | sed 's/# version://')
     if [ -z "$version" ];then
         failed "$get_version_failed_msg"

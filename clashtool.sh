@@ -200,7 +200,7 @@ COLOR_WHITE="\033[37m"
 COLOR_BOLD="\033[1m"
 COLOR_DIM="\033[2m"
 
-# TUI constants (part 1) moved to clashtool_tui.sh
+
 _is_interactive_terminal() {
     command -v stty >/dev/null 2>&1 && [ -c /dev/tty ] 2>/dev/null && { stty -g </dev/tty; } >/dev/null 2>&1
 }
@@ -3735,28 +3735,45 @@ list_backups(){
 # 结果通过全局变量 SELECTED_BACKUP 返回
 # 返回值: 0=成功选择, 1=取消/无备份
 select_backup(){
-    SELECTED_BACKUP="$1"
-    if [ -z "$SELECTED_BACKUP" ]; then
-        warn "$backup_select_name_required_msg" false
+    SELECTED_BACKUP=""
+    if [ ! -d "$backup_dir" ]; then
+        warn "$backup_list_empty_msg" false
         return 1
     fi
-    if [ ! -f "${backup_dir}/${SELECTED_BACKUP}.tar.gz" ]; then
-        warn "$backup_not_exist_msg" false
+    # 收集备份文件名到位置参数
+    set --
+    for _sb_file in $(ls -t "$backup_dir"/*.tar.gz 2>/dev/null); do
+        set -- "$@" "$(basename "$_sb_file" .tar.gz)"
+    done
+    if [ $# -eq 0 ]; then
+        warn "$backup_list_empty_msg" false
         return 1
     fi
-    return 0
+    # 显示选择菜单
+    menu_dispatch "$backup_select_title" "$@" "$menu_return"
+    case "$MENU_RESULT" in
+        BACK|QUIT|''|*[!0-9]*) return 1 ;;
+        *)
+            # 获取选择的备份名
+            _sb_idx=0
+            for _sb_item in "$@"; do
+                [ "$_sb_idx" = "$MENU_RESULT" ] && break
+                _sb_idx=$((_sb_idx + 1))
+            done
+            SELECTED_BACKUP="$_sb_item"
+            return 0
+            ;;
+    esac
 }
 
 restore_backup(){
-    local backup_name="$1"
-    if [ -z "$backup_name" ]; then
-        warn "$backup_select_name_required_msg" false
-        return 1
+    if ! select_backup; then
+        return
     fi
-    local backup_path="${backup_dir}/${backup_name}.tar.gz"
+    local backup_path="${backup_dir}/${SELECTED_BACKUP}.tar.gz"
     if [ ! -f "$backup_path" ]; then
         failed "$backup_not_exist_msg"
-        return 1
+        return
     fi
     # 交互式终端兼容的确认方式
     if _is_interactive_terminal; then
@@ -3777,15 +3794,13 @@ restore_backup(){
 }
 
 delete_backup(){
-    local backup_name="$1"
-    if [ -z "$backup_name" ]; then
-        warn "$backup_select_name_required_msg" false
-        return 1
+    if ! select_backup; then
+        return
     fi
-    local backup_path="${backup_dir}/${backup_name}.tar.gz"
+    local backup_path="${backup_dir}/${SELECTED_BACKUP}.tar.gz"
     if [ ! -f "$backup_path" ]; then
         failed "$backup_not_exist_msg"
-        return 1
+        return
     fi
     rm -f "$backup_path"
     success "$backup_delete_success_msg"
@@ -3870,17 +3885,39 @@ list_profiles(){
     ls -1 "$profiles_dir" 2>/dev/null || echo "$profile_not_exist_msg"
 }
 
+# 选择配置文件（列表选择）
+# 结果通过全局变量 SELECTED_PROFILE 返回
+# 返回值: 0=成功选择, 1=取消/无配置文件
 select_profile(){
-    SELECTED_PROFILE="$1"
-    if [ -z "$SELECTED_PROFILE" ]; then
-        warn "$profile_select_name_required_msg" false
-        return 1
-    fi
-    if [ ! -f "${profiles_dir}/${SELECTED_PROFILE}" ]; then
+    SELECTED_PROFILE=""
+    if [ ! -d "$profiles_dir" ]; then
         warn "$profile_not_exist_msg" false
         return 1
     fi
-    return 0
+    # 收集配置文件名到位置参数
+    set --
+    for _sp_file in "$profiles_dir"/*; do
+        [ -f "$_sp_file" ] && set -- "$@" "$(basename "$_sp_file")"
+    done
+    if [ $# -eq 0 ]; then
+        warn "$profile_not_exist_msg" false
+        return 1
+    fi
+    # 显示选择菜单
+    menu_dispatch "$profile_select_title" "$@" "$menu_return"
+    case "$MENU_RESULT" in
+        BACK|QUIT|''|*[!0-9]*) return 1 ;;
+        *)
+            # 获取选择的配置文件名
+            _sp_idx=0
+            for _sp_item in "$@"; do
+                [ "$_sp_idx" = "$MENU_RESULT" ] && break
+                _sp_idx=$((_sp_idx + 1))
+            done
+            SELECTED_PROFILE="$_sp_item"
+            return 0
+            ;;
+    esac
 }
 
 create_profile(){
@@ -3907,26 +3944,22 @@ create_profile(){
 }
 
 switch_profile(){
-    local profile_name="$1"
-    if [ -z "$profile_name" ]; then
-        warn "$profile_select_name_required_msg" false
-        return 1
+    if ! select_profile; then
+        return
     fi
-    local profile_path="${profiles_dir}/${profile_name}"
+    local profile_path="${profiles_dir}/${SELECTED_PROFILE}"
     if [ ! -f "$profile_path" ]; then
         failed "$profile_not_exist_msg"
-        return 1
+        return
     fi
     cp "$profile_path" "$main_config_path" && success "$profile_switch_success_msg" || failed "$profile_switch_failed_msg"
 }
 
 delete_profile(){
-    local profile_name="$1"
-    if [ -z "$profile_name" ]; then
-        warn "$profile_select_name_required_msg" false
-        return 1
+    if ! select_profile; then
+        return
     fi
-    local profile_path="${profiles_dir}/${profile_name}"
+    local profile_path="${profiles_dir}/${SELECTED_PROFILE}"
     if [ ! -f "$profile_path" ]; then
         failed "$profile_not_exist_msg"
         return 1
@@ -4286,35 +4319,57 @@ config_view() {
     printf "%s\n" "$_cv_content"
 }
 
+# 选择配置键（从 clash_config_keys 列表）
+# 结果通过全局变量 SELECTED_CONFIG_KEY 返回
+# 返回值: 0=成功选择, 1=取消
 select_config_key() {
-    SELECTED_CONFIG_KEY="$1"
-    if [ -z "$SELECTED_CONFIG_KEY" ]; then
-        warn "$config_key_required_msg" false
+    SELECTED_CONFIG_KEY=""
+    # 将空格分隔的键名转为位置参数
+    _old_ifs="$IFS"
+    IFS=' '
+    set -f
+    set -- $clash_config_keys
+    set +f
+    IFS="$_old_ifs"
+    if [ $# -eq 0 ]; then
+        warn "$config_no_keys_msg" false
         return 1
     fi
-    return 0
+    menu_dispatch "$config_select_key_title" "$@" "$menu_return"
+    case "$MENU_RESULT" in
+        BACK|QUIT|''|*[!0-9]*) return 1 ;;
+        *)
+            _sck_idx=0
+            for _sck_item in "$@"; do
+                [ "$_sck_idx" = "$MENU_RESULT" ] && break
+                _sck_idx=$((_sck_idx + 1))
+            done
+            SELECTED_CONFIG_KEY="$_sck_item"
+            return 0
+            ;;
+    esac
 }
 
+# 设置/修改配置项
 config_set() {
-    local _cs_key="$1"
-    local _cs_val="$2"
-    if [ -z "$_cs_key" ]; then
-        warn "$config_key_required_msg" false
+    if ! select_config_key; then
         return 1
     fi
-    if [ -z "$_cs_val" ]; then
-        _cs_val=$(find_user_config "$_cs_key")
-        _cs_prompt=$(printf "$config_set_prompt_val_msg" "$_cs_key")
-        get_input "$_cs_prompt" "$_cs_val"
-        if [ "$GET_INPUT_CANCELED" = "true" ]; then
-            warn "$input_canceled_msg" false; return 1
-        fi
-        _cs_val="$GET_INPUT_RESULT"
+    _cs_key="$SELECTED_CONFIG_KEY"
+    # 获取当前值作为默认值
+    _cs_current=$(find_user_config "$_cs_key")
+    # 构建提示信息
+    _cs_prompt=$(printf "$config_set_prompt_val_msg" "$_cs_key")
+    get_input "$_cs_prompt" "$_cs_current"
+    if [ "$GET_INPUT_CANCELED" = "true" ]; then
+        warn "$input_canceled_msg" false; return 1
     fi
+    _cs_val="$GET_INPUT_RESULT"
     if [ -z "$_cs_val" ]; then
         warn "$config_set_failed_msg" false
         return 1
     fi
+    # 验证输入值
     if ! validate_config_value "$_cs_key" "$_cs_val"; then
         return 1
     fi
@@ -4326,36 +4381,63 @@ config_set() {
     fi
 }
 
+# 删除配置项
 config_del() {
-    local _cd_key="$1"
-    if [ -z "$_cd_key" ]; then
-        warn "$config_key_required_msg" false
-        return 1
-    fi
     if [ ! -f "$user_config_path" ]; then
         warn "$config_no_keys_msg" false
         return 1
     fi
-    _cd_confirm_msg=$(printf "$config_del_confirm_msg" "$_cd_key")
-    if _is_interactive_terminal; then
-        tui_confirm "$_cd_confirm_msg"
-        _cd_confirm="$TUI_CONFIRM_RESULT"
-    else
-        printf "%b" "${COLOR_YELLOW}${_cd_confirm_msg} (y/n): ${COLOR_RESET}"
-        read -r _cd_choice
-        case "$_cd_choice" in
-            y|Y|yes|YES) _cd_confirm="YES" ;;
-            *) _cd_confirm="NO" ;;
-        esac
+    # 获取 user.yaml 中已有的顶层键列表
+    _cd_keys=$(grep '^[^[:space:]#]' "$user_config_path" 2>/dev/null | sed 's/:.*//' | sed 's/[[:space:]]*$//')
+    if [ -z "$_cd_keys" ]; then
+        warn "$config_no_keys_msg" false
+        return 1
     fi
-    if [ "$_cd_confirm" = "YES" ]; then
-        delete_user_config "$_cd_key"
-        if [ $? -eq 0 ]; then
-            success "$config_del_success_msg"
-        else
-            failed "$config_del_failed_msg" false
-        fi
+    # 转换为位置参数
+    _old_ifs="$IFS"
+    IFS="
+"
+    set -f
+    set -- $_cd_keys
+    set +f
+    IFS="$_old_ifs"
+    if [ $# -eq 0 ]; then
+        warn "$config_no_keys_msg" false
+        return 1
     fi
+    menu_dispatch "$config_del_prompt_msg" "$@" "$menu_return"
+    case "$MENU_RESULT" in
+        BACK|QUIT|''|*[!0-9]*) return 1 ;;
+        *)
+            _cd_idx=0
+            for _cd_item in "$@"; do
+                [ "$_cd_idx" = "$MENU_RESULT" ] && break
+                _cd_idx=$((_cd_idx + 1))
+            done
+            _cd_key="$_cd_item"
+            # 确认删除
+            _cd_confirm_msg=$(printf "$config_del_confirm_msg" "$_cd_key")
+            if _is_interactive_terminal; then
+                tui_confirm "$_cd_confirm_msg"
+                _cd_confirm="$TUI_CONFIRM_RESULT"
+            else
+                printf "%b" "${COLOR_YELLOW}${_cd_confirm_msg} (y/n): ${COLOR_RESET}"
+                read -r _cd_choice
+                case "$_cd_choice" in
+                    y|Y|yes|YES) _cd_confirm="YES" ;;
+                    *) _cd_confirm="NO" ;;
+                esac
+            fi
+            if [ "$_cd_confirm" = "YES" ]; then
+                delete_user_config "$_cd_key"
+                if [ $? -eq 0 ]; then
+                    success "$config_del_success_msg"
+                else
+                    failed "$config_del_failed_msg" false
+                fi
+            fi
+            ;;
+    esac
 }
 
 # 查看原始配置文件

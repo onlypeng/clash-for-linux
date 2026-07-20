@@ -21,6 +21,20 @@ TUI_CONFIRM_RESULT=""
 TUI_INPUT_RESULT=""
 GET_INPUT_RESULT=""
 
+# === Menu border constants ===
+# Used for menu rendering, defined here to keep TUI self-contained
+MENU_BORDER_TOP="╔════════════════════════════════════════════════════════════╗"
+MENU_BORDER_MID="╠════════════════════════════════════════════════════════════╣"
+MENU_BORDER_BOT="╚════════════════════════════════════════════════════════════╝"
+MENU_LINE="║"
+MENU_CONTENT_WIDTH=78
+MENU_RIGHT_COL=80
+
+# === Menu messages (defaults, overridden by i18n) ===
+menu_return="[Esc] Return to Previous Menu"
+menu_exit="[Ctrl+C] Exit"
+menu_invalid_choice="Invalid choice! Please try again."
+
 # === TUI detection and rendering ===
 # ==================== TUI 基础组件 ====================
 

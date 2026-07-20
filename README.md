@@ -9,7 +9,7 @@
 - **POSIX 兼容**：以 `#!/bin/sh` 编写，兼容 bash/dash
 - **一键安装**：支持 `curl | sh` 管道安装模式，无需克隆仓库即可部署
 - **双模式**：TUI 交互式菜单 + CLI 命令行，统一入口
-- **模块化**：TUI 逻辑独立到 `clashtool_tui.sh`，菜单定义独立到 `clashtool_menu.sh`，多语言翻译独立到 `i18n/` 目录，主程序通过 source 加载
+- **模块化**：TUI 逻辑独立到 `clashtool_tui.sh`，多语言翻译独立到 `i18n/` 目录，主程序通过 source 加载
 - **在线加载**：TUI 和 i18n 模块支持本地检测，本地缺失或管道安装时自动从 GitHub 在线加载
 - **多语言**：i18n 目录架构支持任意语言扩展，自动检测系统语言（`LANG`），可通过 `language` 变量配置
 - **分组命令**：9 大命令分组 + 5 个直接命令，语义清晰
@@ -80,7 +80,6 @@ clashtool update core
 ```bash
 curl -O https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool.sh
 curl -O https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool_tui.sh
-curl -O https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/clashtool_menu.sh
 mkdir -p i18n
 curl -o i18n/zh_CN.sh https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/i18n/zh_CN.sh
 curl -o i18n/en.sh https://raw.githubusercontent.com/onlypeng/clash-for-linux/main/i18n/en.sh
@@ -90,9 +89,8 @@ sudo sh clashtool.sh install
 
 > **提示**：如需更简单的方式，直接使用上方的「管道安装模式」一行命令即可，脚本会自动下载所有依赖文件。
 >
-> **注意**：`clashtool_tui.sh`、`clashtool_menu.sh` 和 `i18n/` 目录必须与 `clashtool.sh` 放在同一目录。
+> **注意**：`clashtool_tui.sh` 和 `i18n/` 目录必须与 `clashtool.sh` 放在同一目录。
 > - `clashtool_tui.sh` 提供 TUI 菜单功能（交互导航、按键处理）
-> - `clashtool_menu.sh` 提供菜单定义和渲染函数（菜单文本、分组组织）
 > - `i18n/` 目录包含多语言模块（`zh_CN.sh` 中文、`en.sh` 英文等）
 >
 > 若本地缺失这些模块，脚本会自动从 GitHub 在线加载（需网络）；管道安装模式下则全部在线下载到安装目录。
@@ -387,9 +385,8 @@ clashtool                         # 无参数进入 TUI 交互菜单
 
 | 文件 | 说明 |
 |------|------|
-| `clashtool.sh` | 主脚本（业务逻辑 + 命令分发 + 模块加载） |
+| `clashtool.sh` | 主脚本（业务逻辑 + 命令分发 + 菜单定义） |
 | `clashtool_tui.sh` | TUI 模块（菜单渲染、按键读取、交互组件） |
-| `clashtool_menu.sh` | 菜单模块（菜单文本定义、分组组织、渲染函数） |
 | `i18n/zh_CN.sh` | 简体中文语言模块 |
 | `i18n/en.sh` | 英文语言模块（基础/翻译模板） |
 | `test_all.sh` | 统一测试脚本（静态单元测试 + 端到端测试） |
@@ -430,7 +427,6 @@ language="auto"    # 自动检测（根据 LANG 环境变量）
 ├── yq                         # YAML 工具
 ├── clashtool.sh               # 主脚本
 ├── clashtool_tui.sh           # TUI 模块
-├── clashtool_menu.sh          # 菜单模块
 ├── i18n/                      # 多语言目录
 │   ├── zh_CN.sh              # 简体中文
 │   └── en.sh                 # English

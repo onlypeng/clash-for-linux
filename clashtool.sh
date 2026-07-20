@@ -264,41 +264,9 @@ _load_module "clashtool_tui.sh"
 # TUI constants (part 2) moved to clashtool_tui.sh
 
 # Define menu and prompt text variables in English
-menu_start=""
-menu_header=" Clash for Linux - Management Tool v1.2.4 "
-menu_main_option0=" [0] Service Ctrl   - Start/Stop/Restart/Reload"
-menu_main_option1=" [1] Auto Start    - Status & Toggle"
-menu_main_option2=" [2] Gateway       - Status & Toggle"
-menu_main_option3=" [3] Local Proxy   - Status & Toggle"
-menu_main_option4=" [4] Sub & Config  - Manage Subscriptions & Config"
-menu_main_option5=" [5] Proxy Select  - Groups/Servers/Delay/Status"
-menu_main_option6=" [6] Install       - Install/Update/Uninstall Core & UI"
-menu_main_option7=" [7] Tools         - Logs/Backup/Rules/Profiles/Health"
-menu_main_option8=" [8] Status        - Display Clash Information"
-menu_main_option9=" [9] Update        - Check/Update Script"
-# Service menu
-menu_service_title=" Service Control "
-menu_service_option1=" [1] Start Clash"
-menu_service_option2=" [2] Stop Clash"
-menu_service_option3=" [3] Restart Clash"
-menu_service_option4=" [4] Reload Configuration"
-# Install menu
-menu_install_title=" Install & Setup "
-menu_install_option1=" [1] Install Clash Core"
-menu_install_option2=" [2] Update Clash Core"
-menu_install_option3=" [3] Uninstall Clash Core"
-menu_install_option4=" [4] Uninstall All (including configs)"
-menu_install_option5=" [5] Install/Switch yacd"
-menu_install_option6=" [6] Install/Switch dashboard"
-menu_install_option7=" [7] Install/Switch zashboard"
-menu_install_option8=" [8] Update Current UI"
-menu_install_option9=" [9] Uninstall UI"
-# Proxy menu
-menu_proxy_title=" Proxy Selection "
-menu_proxy_option1=" [1] Select Proxy        - Choose group & server"
-menu_proxy_option2=" [2] Proxy Status        - View current selections"
-menu_proxy_option3=" [3] Test Delay          - Test group/server delay"
-menu_proxy_option4=" [4] URL Test            - Test connectivity"
+# Menu definitions moved to clashtool_menu.sh (loaded via load_menu() in main())
+# i18n modules override menu variables after menu module is loaded
+
 # Proxy management messages
 proxy_not_running_msg="Clash is not running, please start Clash first"
 proxy_api_failed_msg="Failed to connect to Clash API"
@@ -315,23 +283,6 @@ proxy_group_label="Group"
 proxy_server_label="Server"
 proxy_delay_label="Delay"
 proxy_source_command_msg="Please use 'source' to execute the proxy command"
-menu_subscription_title=" Subscription Management "
-menu_subscription_option1=" [1] Add New Subscription"
-menu_subscription_option2=" [2] Modify Subscription"
-menu_subscription_option3=" [3] Delete Subscription"
-menu_subscription_option4=" [4] List All Subscriptions"
-menu_subscription_option5=" [5] Update Subscription"
-menu_subscription_option6=" [6] Disable Auto-update"
-menu_subscription_option7=" [7] Enable Auto-update"
-menu_config_title=" Clash Config Editor "
-menu_config_option1=" [1] View All Config Items"
-menu_config_option2=" [2] Set/Modify Config Item"
-menu_config_option3=" [3] Delete Config Item"
-menu_config_option4=" [4] View Raw Config File"
-menu_config_option5=" [5] Edit Config File (GUI/nano/vim/vi)"
-menu_return=" [Esc] Return to Previous Menu"
-menu_exit=" [Ctrl+C] Exit"
-menu_invalid_choice=" Invalid choice! Please try again."
 
 # Config editor messages
 config_view_title_msg="Current Clash User Config (user.yaml):"
@@ -473,59 +424,13 @@ conf_failed_msg="Configuration file error"
 update_downgrade_warn_msg="Cannot downgrade from %s to %s"
 update_confirm_msg="Update from %s to %s?"
 
-menu_tools_title=" Tools & Maintenance "
-menu_tools_option1=" [1] Logs         - View/Search/Filter/Follow Logs"
-menu_tools_option2=" [2] Backup      - Backup/Restore Configuration"
-menu_tools_option3=" [3] Rules       - Manage Clash Rules"
-menu_tools_option4=" [4] Profiles    - Multiple Configuration Profiles"
-menu_tools_option5=" [5] Health      - Health Check & Auto-Recovery"
-menu_backup_title=" Backup & Restore "
-menu_backup_option1=" [1] Backup Current Configuration"
-menu_backup_option2=" [2] List Backups"
-menu_backup_option3=" [3] Restore from Backup"
-menu_backup_option4=" [4] Delete Backup"
-menu_rules_title=" Rules Management "
-menu_rules_option1=" [1] List Available Rules"
-menu_rules_option2=" [2] Enable/Disable Rules"
-menu_rules_option3=" [3] Add Custom Rule"
-menu_profiles_title=" Profile Management "
-menu_profiles_option1=" [1] List Profiles"
-menu_profiles_option2=" [2] Create New Profile"
-menu_profiles_option3=" [3] Switch Profile"
-menu_profiles_option4=" [4] Delete Profile"
-menu_health_title=" Health Check & Recovery "
-menu_health_option1=" [1] View Health Status"
-menu_health_option2=" [2] Toggle Auto-Recovery"
 logs_view_msg="Viewing Clash logs (last 50 lines, press q to exit):"
 logs_empty_msg="No logs available"
 logs_follow_msg="Following logs (Ctrl+C to exit)..."
-menu_logs_title=" Log Viewer "
-menu_logs_option1=" [1] View Recent  - Last 50 lines"
-menu_logs_option2=" [2] Search       - Search by keyword"
-menu_logs_option3=" [3] Filter       - Filter by log level"
-menu_logs_option4=" [4] Follow       - Follow log in real-time"
-menu_logs_option5=" [5] View All     - Show entire log"
-menu_logs_level_title=" Log Level Filter "
-menu_logs_level_debug=" [1] DEBUG"
-menu_logs_level_info=" [2] INFO"
-menu_logs_level_warning=" [3] WARNING"
-menu_logs_level_error=" [4] ERROR"
-menu_logs_level_silent=" [5] SILENT"
 logs_search_prompt_msg="Enter search keyword:"
 logs_search_result_msg="Found %s matches for '%s':"
 logs_filter_empty_msg="No logs found for this level"
-menu_sub_config_title=" Subscriptions & Configuration "
-menu_sub_config_option1=" [1] Add Subscription"
-menu_sub_config_option2=" [2] Modify Subscription"
-menu_sub_config_option3=" [3] Delete Subscription"
-menu_sub_config_option4=" [4] List Subscriptions"
-menu_sub_config_option5=" [5] Update Subscription"
-menu_sub_config_option6=" [6] Disable Auto-update"
-menu_sub_config_option7=" [7] Enable Auto-update"
-menu_sub_config_option8=" [8] View Config Items"
-menu_sub_config_option9=" [9] Set/Modify Config Item"
-menu_sub_config_option10=" [a] Delete Config Item"
-menu_sub_config_option11=" [b] Edit Config File (GUI/nano/vim/vi)"
+
 autostart_status_enabled_msg="Auto Start: Enabled"
 autostart_status_disabled_msg="Auto Start: Disabled"
 gateway_status_enabled_msg="Gateway: Enabled"
@@ -780,6 +685,14 @@ load_i18n() {
         _load_module "clashtool_i18n.sh" && return 0
     fi
     return 1
+}
+
+# 加载菜单模块（clashtool_menu.sh）
+# 包含菜单文本定义、菜单渲染函数、菜单分组组织
+# 必须在 i18n 加载之后调用，以便 i18n 覆盖默认菜单文本
+load_menu() {
+    _load_module "clashtool_menu.sh"
+    return 0
 }
 
 # 向后兼容：保留 use_chinese_language() 函数
@@ -2034,12 +1947,23 @@ install() {
         else
             rm -f "${install_dir}/clashtool_tui.sh.download" 2>/dev/null
         fi
+        # 下载 clashtool_menu.sh 模块（菜单定义）
+        curl -s --max-time 20 -o "${install_dir}/clashtool_menu.sh.download" "${_ct_base_url}/clashtool_menu.sh" 2>/dev/null
+        if [ -f "${install_dir}/clashtool_menu.sh.download" ] && [ -s "${install_dir}/clashtool_menu.sh.download" ] && grep -q '^#' "${install_dir}/clashtool_menu.sh.download" 2>/dev/null; then
+            mv "${install_dir}/clashtool_menu.sh.download" "${install_dir}/clashtool_menu.sh"
+            chmod 644 "${install_dir}/clashtool_menu.sh"
+        else
+            rm -f "${install_dir}/clashtool_menu.sh.download" 2>/dev/null
+        fi
     else
         # 正常模式：复制本地脚本
         cp "$(readlink -f "$0")" "$script_path"
         # 同时复制 TUI 模块到安装目录（确保符号链接调用时能找到）
         _tui_src="$(dirname "$(readlink -f "$0")")/clashtool_tui.sh"
         [ -f "$_tui_src" ] && cp "$_tui_src" "${install_dir}/clashtool_tui.sh"
+        # 同时复制菜单模块到安装目录
+        _menu_src="$(dirname "$(readlink -f "$0")")/clashtool_menu.sh"
+        [ -f "$_menu_src" ] && cp "$_menu_src" "${install_dir}/clashtool_menu.sh"
     fi
     # 同时复制/下载 i18n 目录到安装目录（多语言支持）
     _i18n_src_dir="$(dirname "$(readlink -f "$0" 2>/dev/null)")/i18n"
@@ -2284,6 +2208,17 @@ update_script(){
         rm -f "$_us_tui_temp" 2>/dev/null
     fi
 
+    # 同时下载并更新菜单模块（clashtool_menu.sh）
+    _us_menu_url='https://raw.githubusercontent.com/$project_repo/clashtool_menu.sh'
+    _us_menu_temp="${current_path%/*}/clashtool_menu.sh.download"
+    download "$_us_menu_temp" "$_us_menu_url" "Menu Module" 2>/dev/null
+    if [ -f "$_us_menu_temp" ] && grep -q '^#' "$_us_menu_temp" 2>/dev/null; then
+        mv "$_us_menu_temp" "${current_path%/*}/clashtool_menu.sh"
+        chmod 644 "${current_path%/*}/clashtool_menu.sh"
+    else
+        rm -f "$_us_menu_temp" 2>/dev/null
+    fi
+
     # 同时下载并更新 i18n 目录（多语言支持）
     _us_i18n_dir="${current_path%/*}/i18n"
     mkdir -p "$_us_i18n_dir"
@@ -2306,6 +2241,9 @@ update_script(){
         # 同步 TUI 模块到安装目录
         _us_tui_src="${current_path%/*}/clashtool_tui.sh"
         [ -f "$_us_tui_src" ] && cp "$_us_tui_src" "${install_dir}/clashtool_tui.sh"
+        # 同步菜单模块到安装目录
+        _us_menu_src="${current_path%/*}/clashtool_menu.sh"
+        [ -f "$_us_menu_src" ] && cp "$_us_menu_src" "${install_dir}/clashtool_menu.sh"
         # 同步 i18n 目录到安装目录
         _us_i18n_src_dir="${current_path%/*}/i18n"
         if [ -d "$_us_i18n_src_dir" ]; then
@@ -4670,36 +4608,7 @@ config() {
     fi
 }
 
-show_menu() {
-    printf "\033[H"
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_TOP}${COLOR_RESET}"
-    # 标题居中显示
-    _sm_title="$1"
-    _sm_tw=$(str_display_width "$_sm_title")
-    _sm_tp=$(( MENU_CONTENT_WIDTH - _sm_tw ))
-    [ "$_sm_tp" -lt 0 ] && _sm_tp=0
-    _sm_tpl=$(( _sm_tp / 2 ))
-    printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}${COLOR_BOLD}"
-    [ "$_sm_tpl" -gt 0 ] && printf "%${_sm_tpl}s" ""
-    printf "%s" "$_sm_title"
-    _sm_tpr=$(( _sm_tp - _sm_tpl ))
-    [ "$_sm_tpr" -gt 0 ] && printf "%${_sm_tpr}s" ""
-    printf "%b\n" "${COLOR_RESET}${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_MID}${COLOR_RESET}"
-    shift
-    # 菜单项填充到固定宽度，使右边框对齐
-    for item in "$@"; do
-        _sm_iw=$(str_display_width "$item")
-        _sm_pad=$(( MENU_CONTENT_WIDTH - _sm_iw ))
-        [ "$_sm_pad" -lt 0 ] && _sm_pad=0
-        printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}${COLOR_WHITE}${item}${COLOR_RESET}"
-        [ "$_sm_pad" -gt 0 ] && printf "%${_sm_pad}s" ""
-        printf "%b\n" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
-    done
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_BOT}${COLOR_RESET}"
-    printf "\033[J"
-}
-
+# show_menu() moved to clashtool_menu.sh
 # proxy selection TUI moved to clashtool_tui.sh
 
 update_check() {
@@ -5058,6 +4967,9 @@ main() {
     # 加载国际化语言模块（自动检测或使用用户配置）
     _main_lang=$(detect_language)
     load_i18n "$_main_lang"
+    # 加载菜单模块（包含菜单定义、渲染函数、分组组织）
+    # 必须在 i18n 之后加载，以便 i18n 覆盖默认菜单文本
+    load_menu
     # 检测终端能力，决定是否启用 TUI 模式
     # 仅在进入交互式菜单（无命令参数）时启用 TUI
     if [ -z "$fun" ]; then

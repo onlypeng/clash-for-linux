@@ -88,10 +88,29 @@ detect_docker() {
 if [ "$(id -u)" -eq 0 ]; then
     _is_root_user=true
     _run_mode="root"
-    # root 权限安装到 /opt/clash，软链接到 /usr/local/bin/clashtool
-    install_dir="${CLASHTOOL_INSTALL_DIR:-/opt/${service_name}}"
-    symlink_dir="/usr/local/bin"
-    symlink_path="${symlink_dir}/${cmd_name}"
+    # 通过 sudo 运行时，检测原始用户是否有用户级安装（避免找不到用户文件）
+    if [ -n "$SUDO_USER" ] && [ -z "${CLASHTOOL_INSTALL_DIR:-}" ]; then
+        _sudo_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+        [ -z "$_sudo_home" ] && _sudo_home="/home/$SUDO_USER"
+        if [ -d "${_sudo_home}/.local/${service_name}" ]; then
+            # 原始用户有用户级安装，使用其路径（解决 sudo 运行找不到用户文件的问题）
+            _is_root_user=false
+            _run_mode="user"
+            install_dir="${_sudo_home}/.local/${service_name}"
+            symlink_dir="${_sudo_home}/.local/bin"
+            symlink_path="${symlink_dir}/${cmd_name}"
+        else
+            # 原始用户无安装，使用 root 全局路径
+            install_dir="/opt/${service_name}"
+            symlink_dir="/usr/local/bin"
+            symlink_path="${symlink_dir}/${cmd_name}"
+        fi
+    else
+        # 直接 root 运行或指定了 CLASHTOOL_INSTALL_DIR
+        install_dir="${CLASHTOOL_INSTALL_DIR:-/opt/${service_name}}"
+        symlink_dir="/usr/local/bin"
+        symlink_path="${symlink_dir}/${cmd_name}"
+    fi
 else
     _is_root_user=false
     _run_mode="user"
@@ -678,6 +697,14 @@ piped_install_partial_msg="Partial installation completed, some modules failed: 
 # 提权相关消息默认值
 piped_root_required_msg="Pipeline installation requires root privileges. Please re-run with the following command:"
 piped_root_command_msg="  curl -fsSL https://raw.githubusercontent.com/%s/clashtool.sh | sudo sh"
+
+# 安装模式选择消息默认值
+install_mode_prompt_msg="Select installation mode:"
+install_mode_user_msg="User-level install (%s) - no root required"
+install_mode_root_msg="System-level install (%s) - root required"
+install_mode_choice_msg="Choose [1/2] (default 1): "
+install_mode_user_selected_msg="Selected: user-level install"
+install_mode_root_selected_msg="Selected: system-level install, elevating..."
 
 # 检测系统语言，返回语言代码（如 zh_CN / en / zh_TW）
 # 检测优先级：language 变量 > use_chinese 变量 > LANG 环境变量
@@ -2001,6 +2028,62 @@ _install_piped_full() {
     normal "$(printf "$piped_install_success_msg")"
     
     return 0
+}
+
+# 安装模式选择
+# 返回: 0=用户级安装, 1=系统级安装
+prompt_install_mode() {
+    # 确定用户级安装的目标路径
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        _pim_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+        [ -z "$_pim_home" ] && _pim_home="/home/$SUDO_USER"
+    else
+        _pim_home="$HOME"
+    fi
+    printf "%b\n" "${COLOR_CYAN}${install_mode_prompt_msg}${COLOR_RESET}"
+    printf "%b\n" "  [1] $(printf "$install_mode_user_msg" "${_pim_home}/.local/${service_name}")"
+    printf "%b\n" "  [2] $(printf "$install_mode_root_msg" "/opt/${service_name}")"
+    printf "%b" "${COLOR_CYAN}${install_mode_choice_msg}${COLOR_RESET}"
+    read _pim_choice 2>/dev/null || _pim_choice=""
+    case "$_pim_choice" in
+        2) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# 设置安装路径（覆盖脚本初始化时的路径变量）
+# 参数: $1=mode (user/root)
+set_install_paths() {
+    _sip_mode="$1"
+    if [ "$_sip_mode" = "user" ]; then
+        # 自动确定目标家目录：root+sudo 用 SUDO_USER 的家目录，否则用 $HOME
+        if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+            _sip_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+            [ -z "$_sip_home" ] && _sip_home="/home/$SUDO_USER"
+        else
+            _sip_home="$HOME"
+        fi
+        _is_root_user=false
+        _run_mode="user"
+        install_dir="${_sip_home}/.local/${service_name}"
+        symlink_dir="${_sip_home}/.local/bin"
+        mkdir -p "$symlink_dir" 2>/dev/null
+        chmod 0700 "$symlink_dir" 2>/dev/null
+    else
+        _is_root_user=true
+        _run_mode="root"
+        install_dir="/opt/${service_name}"
+        symlink_dir="/usr/local/bin"
+    fi
+    symlink_path="${symlink_dir}/${cmd_name}"
+    script_path="${install_dir}/clashtool.sh"
+    ui_install_dir="${install_dir}/ui"
+    log_dir="${install_dir}/logs"
+    config_dir="${install_dir}/config"
+    subscription_dir="${config_dir}/subscription"
+    subscription_backup_dir="${subscription_dir}/backup"
+    clash_binary_path="${install_dir}/clash"
+    yq_binary_path="${install_dir}/yq"
 }
 
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
@@ -4325,11 +4408,32 @@ check_and_elevate() {
         return 0
     fi
 
-    # 管道安装模式：无法 exec 自身（无脚本文件），提示用户重新执行
+    # 管道安装模式：无本地脚本文件，需先下载到临时文件再提权执行
     if [ "$_is_piped_install" = "true" ]; then
+        _ce_temp=$(mktemp "/tmp/clashtool_elevate.XXXXXX" 2>/dev/null) || _ce_temp="/tmp/clashtool_elevate.$$"
+        if curl -s --max-time 30 -o "$_ce_temp" "${github_proxy_url}https://raw.githubusercontent.com/${project_repo}/clashtool.sh" 2>/dev/null && [ -s "$_ce_temp" ] && grep -q '^#' "$_ce_temp" 2>/dev/null; then
+            if has_sudo; then
+                if ! is_interactive_shell && ! sudo -n true 2>/dev/null; then
+                    rm -f "$_ce_temp" 2>/dev/null
+                    failed "$cannot_elevate_sudo_noninteractive_msg"
+                    return 1
+                fi
+                exec sudo sh "$_ce_temp" "$@"
+            elif has_su; then
+                if is_interactive_shell; then
+                    printf "%b\n" "${COLOR_CYAN}${enter_root_password_msg}${COLOR_RESET}"
+                    _ce_cmd="sh '$_ce_temp'"
+                    for _ce_arg in "$@"; do
+                        _ce_cmd="$_ce_cmd '$(printf '%s' "$_ce_arg" | sed "s/'/'\\\\''/g")'"
+                    done
+                    exec su -c "$_ce_cmd"
+                fi
+            fi
+        fi
+        rm -f "$_ce_temp" 2>/dev/null
         printf "%b\n" "${COLOR_RED}$(printf "$piped_root_required_msg")${COLOR_RESET}"
         printf "%b\n" "${COLOR_YELLOW}$(printf "$piped_root_command_msg" "$project_repo")${COLOR_RESET}"
-        exit 1
+        return 1
     fi
 
     if has_sudo; then
@@ -4840,35 +4944,61 @@ _dispatch_group() {
     install)
         # install 无子命令时默认安装核心+UI
         if [ -z "$_dg_sub" ]; then
-            if is_root || ! requires_root "install"; then
+            # 不管什么权限都询问安装模式
+            if prompt_install_mode; then
+                # 用户级安装
+                set_install_paths "user"
                 install "$_dg_arg" || return 1
-                # UI 已安装则跳过（避免 failed 退出），用户可用 update ui 更新
                 if ! is_ui_installed; then
                     install_ui "$_dg_arg" || return 1
                 else
                     normal "$ui_already_installed_skip_msg"
                 fi
             else
-                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                check_and_elevate "$_dg_group" "all" "$_dg_arg"
+                # 系统级安装
+                if is_root; then
+                    set_install_paths "root"
+                    install "$_dg_arg" || return 1
+                    if ! is_ui_installed; then
+                        install_ui "$_dg_arg" || return 1
+                    else
+                        normal "$ui_already_installed_skip_msg"
+                    fi
+                else
+                    # 非 root 用户需要提权
+                    normal "$install_mode_root_selected_msg"
+                    check_and_elevate "$_dg_group" "all" "$_dg_arg"
+                fi
             fi
             return 0
         fi
         case "$_dg_sub" in
             core)
-                if is_root || ! requires_root "install"; then
+                if prompt_install_mode; then
+                    set_install_paths "user"
                     install "$_dg_arg"
                 else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
+                    if is_root; then
+                        set_install_paths "root"
+                        install "$_dg_arg"
+                    else
+                        normal "$install_mode_root_selected_msg"
+                        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
+                    fi
                 fi
                 ;;
             ui)
-                if is_root || ! requires_root "install"; then
+                if prompt_install_mode; then
+                    set_install_paths "user"
                     install_ui "$_dg_arg"
                 else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
+                    if is_root; then
+                        set_install_paths "root"
+                        install_ui "$_dg_arg"
+                    else
+                        normal "$install_mode_root_selected_msg"
+                        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
+                    fi
                 fi
                 ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "install" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -5137,10 +5267,7 @@ main() {
                         repair_symlink 2>/dev/null
                     fi
                 fi
-                # 非 root 用户且需要提权时，通过 sudo 重新执行
-                if ! is_root; then
-                    check_and_elevate "$@" || exit 1
-                fi
+                # 进入 TUI 菜单（无需强制 root，各操作函数内部按需提权）
                 menu
             else
                 # TUI 不可用：报错退出

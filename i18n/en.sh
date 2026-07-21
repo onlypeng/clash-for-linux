@@ -522,3 +522,11 @@ piped_install_partial_msg="Partial installation completed, some modules failed: 
 # Elevation-related messages
 piped_root_required_msg="Pipeline installation requires root privileges. Please re-run with the following command:"
 piped_root_command_msg="  curl -fsSL https://raw.githubusercontent.com/%s/clashtool.sh | sudo sh"
+
+# Installation mode selection messages
+install_mode_prompt_msg="Select installation mode:"
+install_mode_user_msg="User-level install (%s) - no root required"
+install_mode_root_msg="System-level install (%s) - root required"
+install_mode_choice_msg="Choose [1/2] (default 1): "
+install_mode_user_selected_msg="Selected: user-level install"
+install_mode_root_selected_msg="Selected: system-level install, elevating..."

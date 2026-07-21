@@ -514,3 +514,11 @@ piped_install_partial_msg="部分安装完成，以下模块下载失败: %s"
 # 提权相关消息
 piped_root_required_msg="管道安装模式需要 root 权限，请使用以下命令重新执行："
 piped_root_command_msg="  curl -fsSL https://raw.githubusercontent.com/%s/clashtool.sh | sudo sh"
+
+# 安装模式选择消息
+install_mode_prompt_msg="请选择安装模式："
+install_mode_user_msg="用户级安装 (%s) - 无需 root 权限"
+install_mode_root_msg="系统级安装 (%s) - 需要 root 权限"
+install_mode_choice_msg="请选择 [1/2] (默认 1): "
+install_mode_user_selected_msg="已选择：用户级安装"
+install_mode_root_selected_msg="已选择：系统级安装，正在提权..."

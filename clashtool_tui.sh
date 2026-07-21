@@ -35,6 +35,18 @@ menu_return="[Esc] Return to Previous Menu"
 menu_exit="[Ctrl+C] Exit"
 menu_invalid_choice="Invalid choice! Please try again."
 
+# === TUI interaction prompts (defaults, overridden by i18n) ===
+tui_confirm_prompt_msg="  [Y] Yes   [N] No   (default N): "
+tui_input_skip_hint_msg="  [Enter] Skip  [Esc] Cancel"
+tui_input_cancel_hint_msg="  [Esc] Cancel"
+tui_press_any_key_msg="  Press any key to continue..."
+tui_press_enter_msg="Press Enter to continue..."
+tui_status_on_label="[ON]"
+tui_status_off_label="[OFF]"
+tui_status_na_root_label="[N/A - need root]"
+tui_unavailable_msg="TUI mode unavailable. Missing dependencies or non-interactive terminal."
+tui_use_cli_hint_msg="Please install required dependencies or use command line mode:"
+
 # === TUI detection and rendering ===
 # ==================== TUI 基础组件 ====================
 
@@ -67,11 +79,16 @@ tui_detect_capability() {
 
 # 获取选中标记（根据终端编码能力）
 tui_get_arrow() {
-    if [ -n "$LANG" ] && echo "$LANG" | grep -qi "utf-8\|utf8"; then
-        printf "%s" "$TUI_ARROW"
-    else
-        printf "%s" "$TUI_ARROW_FALLBACK"
-    fi
+    # 检查 LC_ALL > LC_CTYPE > LANG 的优先级
+    _ga_lc="${LC_ALL:-${LC_CTYPE:-$LANG}}"
+    case "$_ga_lc" in
+        *UTF-8*|*utf-8*|*UTF8*|*utf8*)
+            printf "%s" "$TUI_ARROW"
+            ;;
+        *)
+            printf "%s" "$TUI_ARROW_FALLBACK"
+            ;;
+    esac
 }
 
 # 读取单个按键（原始模式）
@@ -435,20 +452,18 @@ tui_input() {
     stty -echo -icanon min 1 time 0 </dev/tty 2>/dev/null
     printf "%b" "${COLOR_GREEN}> ${COLOR_RESET}"
     _ti_buf=""
-    _ti_tty_fd=0
-    exec {_ti_tty_fd}</dev/tty 2>/dev/null || _ti_tty_fd=0
-    
+
     while true; do
-        _ti_ch=$(dd bs=1 count=1 2>/dev/null <&"$_ti_tty_fd")
+        _ti_ch=$(dd bs=1 count=1 2>/dev/null </dev/tty)
         [ -z "$_ti_ch" ] && continue
-        
+
         _ti_ch_val=$(printf '%d' "'$_ti_ch" 2>/dev/null || echo 0)
-        
+
         case "$_ti_ch_val" in
             27)
                 _ti_old_tout=$(stty -g </dev/tty 2>/dev/null)
                 stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null
-                _ti_next=$(dd bs=1 count=6 2>/dev/null <&"$_ti_tty_fd")
+                _ti_next=$(dd bs=1 count=6 2>/dev/null </dev/tty)
                 stty "$_ti_old_tout" </dev/tty 2>/dev/null
                 if [ -z "$_ti_next" ]; then
                     TUI_INPUT_CANCELED=true
@@ -456,7 +471,6 @@ tui_input() {
                     printf "\n"
                     stty "$_ti_old_tty" </dev/tty 2>/dev/null
                     trap - INT
-                    [ "$_ti_tty_fd" -gt 0 ] && exec "$_ti_tty_fd">&-
                     return 1
                 fi
                 continue
@@ -471,7 +485,6 @@ tui_input() {
                 printf "\n"
                 stty "$_ti_old_tty" </dev/tty 2>/dev/null
                 trap - INT
-                [ "$_ti_tty_fd" -gt 0 ] && exec "$_ti_tty_fd">&-
                 return 1
                 ;;
             8|127)
@@ -482,14 +495,12 @@ tui_input() {
                 continue
                 ;;
         esac
-        
+
         if [ "$_ti_ch_val" -ge 32 ] 2>/dev/null; then
             _ti_buf="${_ti_buf}${_ti_ch}"
             printf '%s' "$_ti_ch"
         fi
     done
-    
-    [ "$_ti_tty_fd" -gt 0 ] && exec "$_ti_tty_fd">&-
 
     if [ "$_ti_allow_empty" = "true" ]; then
         TUI_INPUT_RESULT="$_ti_buf"
@@ -542,7 +553,7 @@ tui_pause() {
     trap '_tp_interrupted=true' INT
 
     # 不清屏，保留函数输出；只打印提示并等待按键
-    printf "\n%b" "${COLOR_YELLOW}  Press any key to continue...${COLOR_RESET}\033[K\n"
+    printf "\n%b" "${COLOR_YELLOW}${tui_press_any_key_msg}${COLOR_RESET}\033[K\n"
     # 清除下方残留内容
     printf "\033[J"
     tui_read_key
@@ -594,8 +605,8 @@ menu_dispatch() {
         esac
     else
         # 非交互式终端：直接报错，不再回退到 show_menu
-        printf "%b\n" "${COLOR_RED}TUI mode requires an interactive terminal (stty + /dev/tty).${COLOR_RESET}"
-        printf "%b\n" "${COLOR_YELLOW}Use command line mode instead, e.g.: clashtool start|stop|status${COLOR_RESET}"
+        printf "%b\n" "${COLOR_RED}$tui_unavailable_msg${COLOR_RESET}"
+        printf "%b\n" "${COLOR_YELLOW}$tui_use_cli_hint_msg${COLOR_RESET}"
         MENU_RESULT="QUIT"
     fi
 }
@@ -711,9 +722,10 @@ logs_menu(){
                 get_input "$logs_search_prompt_msg" "" "true"
                 if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
                 if [ -n "$GET_INPUT_RESULT" ]; then
-                    local _lm_count=$(grep -c "$GET_INPUT_RESULT" "$_lm_file" 2>/dev/null || echo "0")
-                    printf "%b\n" "$(printf "$logs_search_result_msg" "$GET_INPUT_RESULT" "$_lm_count")"
-                    grep --color=always "$GET_INPUT_RESULT" "$_lm_file" | tail -50
+                    local _lm_count
+                    _lm_count=$(grep -Fc "$GET_INPUT_RESULT" "$_lm_file" 2>/dev/null) || _lm_count=0
+                    printf "%b\n" "$(printf "$logs_search_result_msg" "$_lm_count" "$GET_INPUT_RESULT")"
+                    grep -F --color=always "$GET_INPUT_RESULT" "$_lm_file" 2>/dev/null | tail -50
                 fi
                 pause_prompt
                 ;;
@@ -731,11 +743,11 @@ logs_menu(){
                     "$menu_logs_level_silent" \
                     "$menu_return"
                 case "$MENU_RESULT" in
-                    0) grep -i "\[DEBUG\]" "$_lm_file" | tail -50 2>/dev/null || echo "$logs_empty_msg";;
-                    1) grep -i "\[INFO\]" "$_lm_file" | tail -50 2>/dev/null || echo "$logs_empty_msg";;
-                    2) grep -i "\[WARNING\]" "$_lm_file" | tail -50 2>/dev/null || echo "$logs_empty_msg";;
-                    3) grep -i "\[ERROR\]" "$_lm_file" | tail -50 2>/dev/null || echo "$logs_empty_msg";;
-                    4) grep -i "\[SILENT\]" "$_lm_file" | tail -50 2>/dev/null || echo "$logs_empty_msg";;
+                    0) grep -i "\[DEBUG\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
+                    1) grep -i "\[INFO\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
+                    2) grep -i "\[WARNING\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
+                    3) grep -i "\[ERROR\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
+                    4) grep -i "\[SILENT\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
                     BACK) continue;;
                     *) continue;;
                 esac
@@ -748,7 +760,8 @@ logs_menu(){
                     failed "$logs_empty_msg"; pause_prompt; continue
                 fi
                 normal "$logs_follow_msg"
-                tail -f "$_lm_file" 2>/dev/null || failed "$logs_empty_msg"
+                # 在子 shell 中跟踪日志，Ctrl+C 只退出子 shell，不影响主脚本
+                ( trap 'exit 0' INT; tail -f "$_lm_file" 2>/dev/null ) || true
                 ;;
             BACK) break;;
             QUIT) exit 0;;
@@ -758,6 +771,88 @@ logs_menu(){
 }
 
 # === tools ===
+# 备份与恢复子菜单
+backup_main() {
+    while true; do
+        menu_dispatch "$menu_backup_title" \
+            "$menu_backup_option1" \
+            "$menu_backup_option2" \
+            "$menu_backup_option3" \
+            "$menu_backup_option4" \
+            "$menu_return" \
+            "$menu_exit"
+        case "$MENU_RESULT" in
+            0) tui_clear; backup_config; pause_prompt;;
+            1) tui_clear; list_backups; pause_prompt;;
+            2) tui_clear; restore_backup; pause_prompt;;
+            3) tui_clear; delete_backup; pause_prompt;;
+            BACK) break;;
+            QUIT) exit 0;;
+            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+        esac
+    done
+}
+
+# 规则管理子菜单
+rules_main() {
+    while true; do
+        menu_dispatch "$menu_rules_title" \
+            "$menu_rules_option1" \
+            "$menu_rules_option2" \
+            "$menu_rules_option3" \
+            "$menu_return" \
+            "$menu_exit"
+        case "$MENU_RESULT" in
+            0) tui_clear; list_rules; pause_prompt;;
+            1) tui_clear; rules_edit; pause_prompt;;
+            2) tui_clear; rules_add; pause_prompt;;
+            BACK) break;;
+            QUIT) exit 0;;
+            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+        esac
+    done
+}
+
+# 配置文件管理子菜单
+profiles_main() {
+    while true; do
+        menu_dispatch "$menu_profiles_title" \
+            "$menu_profiles_option1" \
+            "$menu_profiles_option2" \
+            "$menu_profiles_option3" \
+            "$menu_profiles_option4" \
+            "$menu_return" \
+            "$menu_exit"
+        case "$MENU_RESULT" in
+            0) tui_clear; list_profiles; pause_prompt;;
+            1) tui_clear; create_profile; pause_prompt;;
+            2) tui_clear; switch_profile; pause_prompt;;
+            3) tui_clear; delete_profile; pause_prompt;;
+            BACK) break;;
+            QUIT) exit 0;;
+            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+        esac
+    done
+}
+
+# 健康检查子菜单
+health_main() {
+    while true; do
+        menu_dispatch "$menu_health_title" \
+            "$menu_health_option1" \
+            "$menu_health_option2" \
+            "$menu_return" \
+            "$menu_exit"
+        case "$MENU_RESULT" in
+            0) tui_clear; health_check; pause_prompt;;
+            1) tui_clear; toggle_auto_recovery; pause_prompt;;
+            BACK) break;;
+            QUIT) exit 0;;
+            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+        esac
+    done
+}
+
 tools(){
     while true; do
         menu_dispatch "$menu_tools_title" \
@@ -983,8 +1078,9 @@ ${_pss_s}"
                 warn "$(printf "$proxy_switch_success_msg" "$_pss_group" "$_pss_real_name")" false
                 return 0
             fi
-            # 切换代理服务器
-            curl -s --max-time 5 -X PUT "http://${_pa_host}/proxies/${_pss_group}" -H "Content-Type: application/json" -H "Authorization: Bearer ${_pa_secret}" -d "{\"name\":\"$_pss_real_name\"}" >/dev/null 2>&1
+            # 切换代理服务器（对服务器名做 JSON 字符串转义，防止破坏 JSON）
+            _pss_json_name=$(printf '%s' "$_pss_real_name" | sed 's/\\/\\\\/g; s/"/\\"/g')
+            curl -s --max-time 5 -X PUT "http://${_pa_host}/proxies/${_pss_group}" -H "Content-Type: application/json" -H "Authorization: Bearer ${_pa_secret}" -d "{\"name\":\"$_pss_json_name\"}" >/dev/null 2>&1
             # 验证切换是否成功
             _pss_verify=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_pss_group}" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
             _pss_verify_now=$(printf '%s\n' "$_pss_verify" | "$yq_binary_path" e '.now' - 2>/dev/null)
@@ -1268,7 +1364,7 @@ menu() {
                     if [ -z "$_sub_url" ]; then
                         warn "$validate_url_msg" false; pause_prompt; continue
                     fi
-                    add "$_var" "$_sub_url"
+                    add "${_var}::${_sub_url}"
                     pause_prompt
                     ;;
                 1)
@@ -1337,7 +1433,7 @@ menu() {
                     if [ -z "$_sub_url" ]; then
                         warn "$validate_url_msg" false; pause_prompt; continue
                     fi
-                    add "$_var" "$_sub_url"
+                    add "${_var}::${_sub_url}"
                     pause_prompt
                     ;;
                 1) # Modify subscription
@@ -1397,26 +1493,26 @@ menu() {
         # 动态生成开机自启/网关/本机代理的状态显示
         local _mm_autostart_label _mm_gateway_label _mm_proxy_label
         if is_auto_start; then
-            _mm_autostart_label="$menu_main_option1 ${COLOR_GREEN}[ON]${COLOR_RESET}"
+            _mm_autostart_label="$menu_main_option1 ${COLOR_GREEN}${tui_status_on_label}${COLOR_RESET}"
         else
-            _mm_autostart_label="$menu_main_option1 ${COLOR_RED}[OFF]${COLOR_RESET}"
+            _mm_autostart_label="$menu_main_option1 ${COLOR_RED}${tui_status_off_label}${COLOR_RESET}"
         fi
         
         # 网关选项：用户级安装时标记为不可用
         if is_root; then
             if is_gateway; then
-                _mm_gateway_label="$menu_main_option2 ${COLOR_GREEN}[ON]${COLOR_RESET}"
+                _mm_gateway_label="$menu_main_option2 ${COLOR_GREEN}${tui_status_on_label}${COLOR_RESET}"
             else
-                _mm_gateway_label="$menu_main_option2 ${COLOR_RED}[OFF]${COLOR_RESET}"
+                _mm_gateway_label="$menu_main_option2 ${COLOR_RED}${tui_status_off_label}${COLOR_RESET}"
             fi
         else
-            _mm_gateway_label="$menu_main_option2 ${COLOR_DIM}[N/A - need root]${COLOR_RESET}"
+            _mm_gateway_label="$menu_main_option2 ${COLOR_DIM}${tui_status_na_root_label}${COLOR_RESET}"
         fi
-        
+
         if is_proxy; then
-            _mm_proxy_label="$menu_main_option3 ${COLOR_GREEN}[ON]${COLOR_RESET}"
+            _mm_proxy_label="$menu_main_option3 ${COLOR_GREEN}${tui_status_on_label}${COLOR_RESET}"
         else
-            _mm_proxy_label="$menu_main_option3 ${COLOR_RED}[OFF]${COLOR_RESET}"
+            _mm_proxy_label="$menu_main_option3 ${COLOR_RED}${tui_status_off_label}${COLOR_RESET}"
         fi
 
         menu_dispatch "$_mm_title" \

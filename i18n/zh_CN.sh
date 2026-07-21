@@ -110,6 +110,16 @@ menu_sub_config_option9=" [9] 设置/修改配置项"
 menu_sub_config_option10=" [a] 删除配置项"
 menu_sub_config_option11=" [b] 编辑器修改配置文件"
 
+# TUI 交互提示
+tui_confirm_prompt_msg="  [Y] 是   [N] 否   (默认 N): "
+tui_input_skip_hint_msg="  [Enter] 跳过  [Esc] 取消"
+tui_input_cancel_hint_msg="  [Esc] 取消"
+tui_press_any_key_msg="  按任意键继续..."
+tui_press_enter_msg="按 Enter 键继续..."
+tui_status_on_label="[ON]"
+tui_status_off_label="[OFF]"
+tui_status_na_root_label="[N/A - 需要 root]"
+
 # Proxy management messages
 proxy_not_running_msg="Clash 未运行，请先启动 Clash"
 proxy_api_failed_msg="无法连接 Clash API"
@@ -130,6 +140,7 @@ proxy_current_label="(当前)"
 proxy_url_test_msg="正在 URL 测试 %s..."
 proxy_url_test_done_msg="%s URL 测试完成"
 proxy_source_required_msg="请使用 source 执行 proxy 命令"
+proxy_source_command_msg="请使用 source 执行 proxy 命令"
 
 # 配置编辑消息
 config_view_title_msg="当前 Clash 用户配置 (user.yaml)："
@@ -188,6 +199,7 @@ uninstall_success_msg="卸载成功"
 uninstall_purge_success_msg="卸载成功（已清除配置）"
 uninstall_all_success_msg="完全卸载成功（核心 + UI + 配置）"
 update_script_success_msg='脚本更新成功'
+update_script_failed_msg='脚本更新失败'
 require_check_msg="检测是否缺少依赖"
 require_install_failed_msg="无法识别包管理器，请自行安装"
 init_config_start_msg="初始化配置文件"
@@ -331,6 +343,12 @@ profile_list_title_msg="可用配置："
 backup_select_name_required_msg="请指定备份名称"
 profile_select_name_required_msg="请指定配置名称"
 config_key_required_msg="请指定配置键"
+
+# TUI 状态消息
+tui_stty_check_msg="检测依赖：未找到 stty，正在尝试安装..."
+tui_module_not_found_msg="未找到 TUI 模块，正在尝试下载..."
+tui_unavailable_msg="TUI 模式不可用。缺少依赖或非交互式终端。"
+tui_use_cli_hint_msg="请安装所需依赖或使用命令行模式："
 
 # ==================== 帮助命令（中文版） ====================
 show_help() {
@@ -492,3 +510,7 @@ piped_install_download_msg="正在下载 %s..."
 piped_install_retry_msg="重试下载 %s (%d/%d)..."
 piped_install_success_msg="完整版本 clashtool 安装完成"
 piped_install_partial_msg="部分安装完成，以下模块下载失败: %s"
+
+# 提权相关消息
+piped_root_required_msg="管道安装模式需要 root 权限，请使用以下命令重新执行："
+piped_root_command_msg="  curl -fsSL https://raw.githubusercontent.com/%s/clashtool.sh | sudo sh"

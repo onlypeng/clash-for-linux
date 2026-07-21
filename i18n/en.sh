@@ -9,7 +9,6 @@
 # 添加新语言：复制本文件为 i18n/<新语言>.sh，翻译所有变量值即可。
 
 # ==================== 菜单文本 ====================
-menu_start=""
 menu_header=" Clash for Linux - Management Tool v1.2.4 "
 menu_main_option0=" [0] Service Ctrl   - Start/Stop/Restart/Reload"
 menu_main_option1=" [1] Auto Start    - Status & Toggle"
@@ -109,13 +108,23 @@ menu_sub_config_option9=" [9] Set/Modify Config Item"
 menu_sub_config_option10=" [a] Delete Config Item"
 menu_sub_config_option11=" [b] Edit Config File (GUI/nano/vim/vi)"
 
+# TUI interaction prompts
+tui_confirm_prompt_msg="  [Y] Yes   [N] No   (default N): "
+tui_input_skip_hint_msg="  [Enter] Skip  [Esc] Cancel"
+tui_input_cancel_hint_msg="  [Esc] Cancel"
+tui_press_any_key_msg="  Press any key to continue..."
+tui_press_enter_msg="Press Enter to continue..."
+tui_status_on_label="[ON]"
+tui_status_off_label="[OFF]"
+tui_status_na_root_label="[N/A - need root]"
+
 # Proxy management messages
 proxy_not_running_msg="Clash is not running, please start Clash first"
 proxy_api_failed_msg="Failed to connect to Clash API"
 proxy_no_groups_msg="No proxy groups found in configuration"
 proxy_select_group_msg="Select a proxy group:"
 proxy_select_server_msg="Select a proxy server for '%s':"
-proxy_switch_success_msg="Proxy switched successfully"
+proxy_switch_success_msg="Proxy switched: %s -> %s"
 proxy_switch_failed_msg="Failed to switch proxy"
 proxy_delay_testing_msg="Testing proxy delay..."
 proxy_delay_result_msg="Delay: %s ms"
@@ -125,6 +134,11 @@ proxy_group_label="Group"
 proxy_server_label="Server"
 proxy_delay_label="Delay"
 proxy_source_command_msg="Please use 'source' to execute the proxy command"
+proxy_source_required_msg="Please use 'source' to execute the proxy command"
+proxy_delay_all_msg="Testing all servers in %s..."
+proxy_current_label="(current)"
+proxy_url_test_msg="URL testing %s..."
+proxy_url_test_done_msg="%s URL test completed"
 
 # Config editor messages
 config_view_title_msg="Current Clash User Config (user.yaml):"
@@ -199,6 +213,7 @@ install_ui_failed_msg="ClashUI installation failed, index.html not found in arch
 ui_already_installed_skip_msg="ClashUI already installed, skip. Use 'update ui' to update."
 ui_not_installed_skip_msg="ClashUI not installed, skip."
 update_script_success_msg='Script Update Success'
+update_script_failed_msg='Script update failed'
 clash_running_warn_msg="Clash service is already running"
 clash_not_running_warn_msg="Clash service is not running"
 clash_start_msg="Starting Clash service"
@@ -240,7 +255,6 @@ proxy_port_update_msg="Detected Clash HTTP proxy port has changed and proxy is e
 proxy_enable_reminder_msg="Detected proxy is enabled, please remember to disable it"
 proxy_enable_failed_msg="Detected proxy is enabled, please disable it before uninstalling"
 non_proxy_source_msg="Do not use 'source' to execute commands other than 'proxy'"
-proxy_source_required_msg="Please use 'source' to execute the proxy command"
 proxy_bypass_hosts_source_command_msg="Please use 'source' to execute the proxy command"
 proxy_on_success_msg="Proxy has been enabled"
 proxy_off_success_msg="Proxy has been disabled"
@@ -327,6 +341,12 @@ profile_list_title_msg="Available profiles:"
 backup_select_name_required_msg="Please specify backup name"
 profile_select_name_required_msg="Please specify profile name"
 config_key_required_msg="Please specify config key"
+
+# TUI status messages
+tui_stty_check_msg="Checking for dependencies: stty not found, attempting to install..."
+tui_module_not_found_msg="TUI module not found, attempting to download..."
+tui_unavailable_msg="TUI mode unavailable. Missing dependencies or non-interactive terminal."
+tui_use_cli_hint_msg="Please install required dependencies or use command line mode:"
 
 # help 行输出辅助：按显示宽度对齐
 _help_row() {
@@ -498,3 +518,7 @@ piped_install_download_msg="Downloading %s..."
 piped_install_retry_msg="Retrying %s (%d/%d)..."
 piped_install_success_msg="Full clashtool installation completed successfully"
 piped_install_partial_msg="Partial installation completed, some modules failed: %s"
+
+# Elevation-related messages
+piped_root_required_msg="Pipeline installation requires root privileges. Please re-run with the following command:"
+piped_root_command_msg="  curl -fsSL https://raw.githubusercontent.com/%s/clashtool.sh | sudo sh"

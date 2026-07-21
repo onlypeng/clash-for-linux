@@ -1,6 +1,11 @@
-#!/bin/sh  
+#!/bin/sh
 # version:1.2.4
 # Clash for Linux - A comprehensive Clash management tool
+# Disable bash history expansion to prevent issues with ! character in strings
+# (only works in bash, silently ignored in other shells)
+if [ -n "$BASH_VERSION" ]; then
+    set +H
+fi
 
 # ==================== 配置参数 ====================
 # 外部控制器密码，不填写则随机生成
@@ -230,7 +235,8 @@ _load_module() {
         normal "$(printf "$module_local_missing_msg" "$_lm_name")" 2>/dev/null
     fi
     _lm_url="${github_proxy_url}https://raw.githubusercontent.com/$project_repo/$_lm_name"
-    _lm_temp="${TMPDIR:-/tmp}/clashtool_${_lm_name}.$$"
+    # 使用 mktemp 创建临时文件，避免符号链接攻击
+    _lm_temp=$(mktemp "${TMPDIR:-/tmp}/clashtool_${_lm_name}.XXXXXX" 2>/dev/null) || _lm_temp="${TMPDIR:-/tmp}/clashtool_${_lm_name}.$$"
     if command -v curl >/dev/null 2>&1; then
         curl -s --max-time 20 -o "$_lm_temp" "$_lm_url" 2>/dev/null
         # 校验下载文件：非空且为 shell 脚本（含 # 注释行）
@@ -265,15 +271,19 @@ proxy_api_failed_msg="Failed to connect to Clash API"
 proxy_no_groups_msg="No proxy groups found in configuration"
 proxy_select_group_msg="Select a proxy group:"
 proxy_select_server_msg="Select a proxy server for '%s':"
-proxy_switch_success_msg="Proxy switched successfully"
+proxy_switch_success_msg="Proxy switched: %s -> %s"
 proxy_switch_failed_msg="Failed to switch proxy"
 proxy_delay_testing_msg="Testing proxy delay..."
 proxy_delay_result_msg="Delay: %s ms"
 proxy_delay_timeout_msg="Proxy timeout"
+proxy_delay_all_msg="Testing all servers in %s..."
 proxy_status_title_msg="Current Proxy Status:"
 proxy_group_label="Group"
 proxy_server_label="Server"
 proxy_delay_label="Delay"
+proxy_current_label="(current)"
+proxy_url_test_msg="URL testing %s..."
+proxy_url_test_done_msg="%s URL test completed"
 proxy_source_command_msg="Please use 'source' to execute the proxy command"
 
 # Config editor messages
@@ -349,6 +359,7 @@ install_ui_failed_msg="ClashUI installation failed, index.html not found in arch
 ui_already_installed_skip_msg="ClashUI already installed, skip. Use 'update ui' to update."
 ui_not_installed_skip_msg="ClashUI not installed, skip."
 update_script_success_msg='Script Update Success'
+update_script_failed_msg='Script update failed'
 clash_running_warn_msg="Clash service is already running"
 clash_not_running_warn_msg="Clash service is not running"
 clash_start_msg="Starting Clash service"
@@ -548,8 +559,18 @@ show_help() {
     printf "%b\n" "${COLOR_YELLOW}${COLOR_BOLD}  tools  - Tools & Maintenance${COLOR_RESET}"
     _help_row "tools logs" "" "View/search/filter logs"
     _help_row "tools backup" "" "Backup configuration"
-    _help_row "tools restore" "" "Restore from backup"
-    _help_row "tools health" "" "Health check & recovery"
+    _help_row "tools list-backups" "" "List available backups"
+    _help_row "tools restore" "" "Restore from backup (interactive)"
+    _help_row "tools delete-backup" "" "Delete a backup (interactive)"
+    _help_row "tools profiles" "" "List configuration profiles"
+    _help_row "tools create-profile" "" "Create new profile (interactive)"
+    _help_row "tools switch-profile" "" "Switch profile (interactive)"
+    _help_row "tools delete-profile" "" "Delete profile (interactive)"
+    _help_row "tools rules" "" "List available rules"
+    _help_row "tools add-rule" "" "Add custom rule (interactive)"
+    _help_row "tools edit-rules" "" "Edit rules file"
+    _help_row "tools health" "" "Health check & status"
+    _help_row "tools toggle-recovery" "" "Toggle auto-recovery"
     _help_row "tools symlink" "" "Repair clashtool symlink"
     printf "%b\n" "${COLOR_CYAN}─────────────────────────────────────────────────────────────────${COLOR_RESET}"
     printf "%b\n" "${COLOR_DIM}  Interactive menu: run 'clashtool' without arguments${COLOR_RESET}"
@@ -565,6 +586,12 @@ cannot_elevate_sudo_noninteractive_msg="Cannot elevate privileges: sudo requires
 cannot_elevate_no_sudo_msg="Cannot elevate privileges: sudo not available and not in interactive shell"
 cannot_elevate_no_way_msg="Cannot elevate privileges: neither sudo nor su is available. Please run this script as root user."
 enter_root_password_msg="Please enter root password when prompted:"
+
+# TUI status messages (defaults)
+tui_stty_check_msg="Checking for dependencies: stty not found, attempting to install..."
+tui_module_not_found_msg="TUI module not found, attempting to download..."
+tui_unavailable_msg="TUI mode unavailable. Missing dependencies or non-interactive terminal."
+tui_use_cli_hint_msg="Please install required dependencies or use command line mode:"
 symlink_repair_confirm_msg="Symlink 'clashtool' is missing or broken. Repair now?"
 symlink_repair_success_msg="Symlink repaired."
 symlink_check_ok_msg="Symlink OK: %s -> %s"
@@ -648,6 +675,10 @@ piped_install_retry_msg="Retrying %s (%d/%d)..."
 piped_install_success_msg="Full clashtool installation completed successfully"
 piped_install_partial_msg="Partial installation completed, some modules failed: %s"
 
+# 提权相关消息默认值
+piped_root_required_msg="Pipeline installation requires root privileges. Please re-run with the following command:"
+piped_root_command_msg="  curl -fsSL https://raw.githubusercontent.com/%s/clashtool.sh | sudo sh"
+
 # 检测系统语言，返回语言代码（如 zh_CN / en / zh_TW）
 # 检测优先级：language 变量 > use_chinese 变量 > LANG 环境变量
 detect_language() {
@@ -672,12 +703,10 @@ detect_language() {
 
 # 加载 i18n 语言模块
 # 参数: $1 - 语言代码（如 zh_CN / en / zh_TW）
-# 英文(en)为默认值，已在主脚本中定义，无需加载额外文件
+# 英文(en)模块包含完整 menu_* 文本定义，必须加载以确保 TUI 菜单正常显示
 load_i18n() {
     _li_lang="$1"
     [ -z "$_li_lang" ] && _li_lang="en"
-    # 英文是默认值，已在主脚本中定义，无需加载
-    [ "$_li_lang" = "en" ] && return 0
     # 优先从 i18n/ 目录加载（本地优先，在线回退）
     _load_module "i18n/${_li_lang}.sh" && return 0
     # 向后兼容：回退到旧版 clashtool_i18n.sh（仅 zh_CN）
@@ -1381,6 +1410,7 @@ decompression() {
             ;;
         *)
             failed "$(printf "$unsupported_archive_msg" "$archive_file")"
+            return 1
             ;;
     esac
 }
@@ -1610,7 +1640,7 @@ download(){
 
 get_repo_version(){
     api_url="https://api.github.com/repos/$1/releases/latest"
-    version=$(curl -s "$api_url" | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v?' '{print $2}')
+    version=$(curl -s "$api_url" 2>/dev/null | sed 's/[\" ,]//g' | grep '^tag_name' | awk -F ':v?' '{print $2}' | tr -d '\n')
     echo "$version"
 }
 
@@ -1717,6 +1747,7 @@ clear(){
     # 如果已安装则报错
     if [ -f "$clash_binary_path" ];then
         failed "Clash $was_install_msg"
+        return 1
     fi
     # 如果存在残余则清零
     if [ -d "$install_dir" ];then
@@ -2124,6 +2155,7 @@ install_ui() {
     url=$(get_dict_value 'ui_url' "$ui_name" )
     if [ -z "$url" ]; then
         failed "$install_ui_parameter_failed_msg"
+        return 1
     fi
     download_name=$(get_download_filename "$url")
     temp_file_path="${install_dir}/${download_name}"
@@ -2198,7 +2230,7 @@ update_script(){
     current_path=$(readlink -f "$0")
     current=$(grep '^# version:' "$current_path" | head -1 | sed 's/# version://')
     normal "${current_version_msg}$current"
-    url='https://raw.githubusercontent.com/$project_repo/clashtool.sh'
+    url="https://raw.githubusercontent.com/$project_repo/clashtool.sh"
     version=$(curl -s "${github_proxy_url}${url}" | grep '^# version:' | head -1 | sed 's/# version://')
     if [ -z "$version" ];then
         failed "$get_version_failed_msg"
@@ -2224,11 +2256,11 @@ update_script(){
     cp "$current_path" "$backup_file"
     
     # 更新当前脚本
-    mv "$temp_file" "$current_path" || { rm -f "$temp_file"; failed "更新失败"; return 1; }
+    mv "$temp_file" "$current_path" || { rm -f "$temp_file"; failed "$update_script_failed_msg"; return 1; }
     chmod 755 "$current_path"
 
     # 同时下载并更新 TUI 模块
-    _us_tui_url='https://raw.githubusercontent.com/$project_repo/clashtool_tui.sh'
+    _us_tui_url="https://raw.githubusercontent.com/$project_repo/clashtool_tui.sh"
     _us_tui_temp="${current_path%/*}/clashtool_tui.sh.download"
     download "$_us_tui_temp" "$_us_tui_url" "TUI Module" 2>/dev/null
     if [ -f "$_us_tui_temp" ] && grep -q '^#' "$_us_tui_temp" 2>/dev/null; then
@@ -2306,7 +2338,8 @@ load_config(){
             mv "$temp_file_path" "$main_config_path"
         else
              failed "$not_sub_exists_msg"
-        fi  
+             return 1
+        fi
     fi
 }
 
@@ -2321,7 +2354,7 @@ start() {
     else
         normal "$clash_start_msg"
         # 生成配置文件
-        load_config "$sub_name"
+        load_config "$sub_name" || return 1
         # 判断是否开启透明网关
         gateway_status=$(find_clashtool_config "gateway")
         if [ "$gateway_status" = 'true' ];then
@@ -2339,6 +2372,7 @@ start() {
         refresh_status
         if ! $clash_is_running; then
             failed "$clash_start_failed_msg"
+            return 1
         fi
         if [ -n "$sub_name" ];then
             # 更改配置中默认使用的配置文件
@@ -2401,7 +2435,7 @@ stop() {
                 fi
             done
             [ "$_still_alive" = "false" ] && break
-            sleep 0.1
+            sleep 1
             _s_wait=$((_s_wait + 1))
         done
         # 验证是否真正停止
@@ -2417,7 +2451,7 @@ stop() {
             for temp_pid in $_stop_pids; do
                 [ -n "$temp_pid" ] && kill -9 "${temp_pid}" 2>/dev/null
             done
-            sleep 0.5
+            sleep 1
             # 再次验证
             _still_alive=false
             for temp_pid in $_stop_pids; do
@@ -2460,7 +2494,7 @@ reload() {
         return 1
     fi
     # 生成配置
-    load_config "$sub_name"
+    load_config "$sub_name" || return 1
     # 重载配置
     port=$(find_user_config "external-controller" | awk -F ':' '{print $2}')
     controller_secret=$(find_user_config "secret")
@@ -2615,6 +2649,43 @@ add(){
     fi
 }
 
+# 修改订阅 URL（保留原 interval，仅更新 URL 和下载内容）
+# 参数: $1 - 订阅名称, $2 - 新 URL
+modify() {
+    _md_name="$1"
+    _md_url="$2"
+    # 校验订阅名称
+    case "$_md_name" in
+        *[..\\/:\*\?\<\>\|]*|"")
+            failed "$(printf "$invalid_sub_name_msg" "$_md_name")"
+            return 1
+            ;;
+    esac
+    if [ -z "$_md_name" ] || [ -z "$_md_url" ]; then
+        failed "$add_sub_parameter_failed_msg"
+        return 1
+    fi
+    if ! subscription_exists "$_md_name"; then
+        failed "$not_sub_exists_msg"
+        return 1
+    fi
+    # 判断 url 类型并下载/复制
+    if [ "${_md_url#http}" != "$_md_url" ]; then
+        check_url "$_md_url" || return 1
+        download_sub "$_md_name" "$_md_url" || return 1
+    else
+        if [ ! -f "$_md_url" ]; then
+            failed "$not_sub_exists_msg"
+            return 1
+        fi
+        check_config "$_md_url" || return 1
+        cp "$_md_url" "${subscription_dir}/${_md_name}.yaml"
+    fi
+    # 仅更新 URL 配置，interval 保持不变
+    update_subscription_config "$_md_name" 'url' "$_md_url"
+    success "$update_sub_success_msg"
+}
+
 # 参数: $1：sub_name - 订阅名称
 del() {
     sub_name=$1
@@ -2667,6 +2738,8 @@ update_sub() {
                 download_sub "${name}"
             fi
         done
+        # all 模式下使用当前订阅进行 reload，未配置则跳过
+        use=$(find_subscription_config '' 'use')
     else
         # 当前使用配置文件
         use=$(find_subscription_config '' 'use')
@@ -2683,13 +2756,14 @@ update_sub() {
                 download_sub "${sub_name}"
             else
                 failed "$not_sub_exists_msg"
+                return 1
             fi
         fi
     fi
     success "$update_sub_success_msg"
     # 刷新运行状态，重载配置文件
     refresh_status
-    if $clash_is_running; then
+    if $clash_is_running && [ -n "$use" ]; then
         reload "$use"
     fi
 }
@@ -2738,13 +2812,15 @@ auto_update_sub() {
         update_clashtool_config "auto_update_sub" false
         success "$auto_update_sub_off_success_msg"
     elif [ "$enable" = '' ];then
-        enable=$(find_subscription_config 'auto_update_sub')
+        enable=$(find_clashtool_config 'auto_update_sub')
     else
         failed "$verify_failed_msg"
+        return 1
     fi
     # 判断是否存在订阅配置
     if [ -n "$sub_name" ] && ! subscription_exists "$sub_name"; then
         failed "$not_sub_exists_msg"
+        return 1
     fi
     if [ -z "$sub_name" ]; then
         # 为空则根据配置和enable重新设置全部定时任务
@@ -2753,9 +2829,9 @@ auto_update_sub() {
             if [ -n "$name" ]; then
                 interval=$(find_subscription_config "$name" 'interval')
                 if [ "$enable" = "false" ] || [ "$interval" = '0' ]; then
-                    crontab_tool '' "$script_path update_sub ${name} >> ${log_dir}/crontab.log 2>&1"
+                    crontab_tool '' "$script_path update_sub \"${name}\" >> \"${log_dir}\"/crontab.log 2>&1"
                 else
-                    crontab_tool "0 */$interval * * *" "$script_path update_sub ${name} >> ${log_dir}/crontab.log 2>&1"
+                    crontab_tool "0 */$interval * * *" "$script_path update_sub \"${name}\" >> \"${log_dir}\"/crontab.log 2>&1"
                 fi
             fi
         done
@@ -2763,20 +2839,21 @@ auto_update_sub() {
         interval=$(find_subscription_config "$sub_name" 'interval')
         # 设置指定定时任务
         if [ "$enable" = "false" ] || [ "$interval" = '0' ]; then
-            crontab_tool '' "$script_path update_sub ${sub_name} >> ${log_dir}/crontab.log 2>&1"
+            crontab_tool '' "$script_path update_sub \"${sub_name}\" >> \"${log_dir}\"/crontab.log 2>&1"
         else
-            crontab_tool "0 */$interval * * *" "$script_path update_sub ${sub_name} >> ${log_dir}/crontab.log 2>&1"
+            crontab_tool "0 */$interval * * *" "$script_path update_sub \"${sub_name}\" >> \"${log_dir}\"/crontab.log 2>&1"
         fi
     fi
 }
 gateway(){
     enable=${1:-true}
-    verify $enable
+    verify $enable || return 1
     # 网关模式需要 root 权限（设置 IP 转发）
     if ! is_root; then
         permission_denied_msg "gateway"
         printf "\n"
         failed "$gateway_root_forward_msg"
+        return 1
     fi
     # Docker 环境下网关模式可能受限
     if is_docker && $enable; then
@@ -2877,6 +2954,7 @@ create_service_file(){
             ;;
         *)
             failed "$unsupported_linux_distribution_failed_msg"
+            return 1
     esac
 }
 
@@ -2937,6 +3015,7 @@ EOF
             ;;
         *)
             failed "$unsupported_linux_distribution_failed_msg"
+            return 1
         esac
         success "$auto_start_enabled_success_msg"
     else
@@ -2949,6 +3028,7 @@ EOF
                 ;;
             *)
                 failed "$unsupported_linux_distribution_failed_msg"
+                return 1
         esac
         success "$auto_start_turned_off_success_msg"
     fi
@@ -3215,7 +3295,7 @@ _proxy_unset_system() {
 
     # /etc/environment
     if [ -f /etc/environment ]; then
-        _pus_env_tmp="/etc/environment.tmp.$$"
+        _pus_env_tmp=$(mktemp /etc/environment.tmp.XXXXXX 2>/dev/null) || _pus_env_tmp="/etc/environment.tmp.$$"
         cp /etc/environment "$_pus_env_tmp" 2>/dev/null
         for proto in $proxy_protocols; do
             sed -i "/^${proto}_proxy=/d" "$_pus_env_tmp"
@@ -3712,6 +3792,9 @@ backup_config(){
     fi
 }
 
+# proxy_show_status 定义在 clashtool_tui.sh 中（详细版：显示规则组/服务器/延迟）
+# 如需查看本机代理/网关/自启状态，请使用 'clashtool status' 命令
+
 # CLI 命令别名
 backup() { backup_config "$@"; }
 restore() { restore_backup "$@"; }
@@ -3768,12 +3851,12 @@ select_backup(){
 
 restore_backup(){
     if ! select_backup; then
-        return
+        return 1
     fi
     local backup_path="${backup_dir}/${SELECTED_BACKUP}.tar.gz"
     if [ ! -f "$backup_path" ]; then
         failed "$backup_not_exist_msg"
-        return
+        return 1
     fi
     # 交互式终端兼容的确认方式
     if _is_interactive_terminal; then
@@ -3789,18 +3872,19 @@ restore_backup(){
             success "$backup_restore_success_msg"
         else
             failed "$backup_restore_failed_msg"
+            return 1
         fi
     fi
 }
 
 delete_backup(){
     if ! select_backup; then
-        return
+        return 1
     fi
     local backup_path="${backup_dir}/${SELECTED_BACKUP}.tar.gz"
     if [ ! -f "$backup_path" ]; then
         failed "$backup_not_exist_msg"
-        return
+        return 1
     fi
     rm -f "$backup_path"
     success "$backup_delete_success_msg"
@@ -3818,7 +3902,8 @@ view_logs(){
     elif [ -f "${log_dir}/clash.log" ]; then
         tail -50 "${log_dir}/clash.log" 2>/dev/null || failed "$logs_empty_msg"
     else
-        local _vl_tmp="/tmp/clash_log_$$.txt"
+        local _vl_tmp
+        _vl_tmp=$(mktemp /tmp/clash_log.XXXXXX 2>/dev/null) || _vl_tmp="/tmp/clash_log.$$"
         sh "$script_path" status > "$_vl_tmp" 2>&1
         if [ -f "$_vl_tmp" ]; then cat "$_vl_tmp"; rm -f "$_vl_tmp"
         else failed "$logs_empty_msg"; fi
@@ -3851,10 +3936,22 @@ health_check(){
         echo "$health_clash_uptime_msg $(ps -p "$clash_pid" -o etime= 2>/dev/null)"
         echo "$health_clash_memory_msg $mem"
         echo "$health_clash_cpu_msg ${cpu}%"
-        local connections=$(ss -tn | grep -c ":7892" 2>/dev/null || echo "0")
+        # 统计活动连接数：读取配置端口（mixed-port / socks-port / port）
+        local _hc_ports=""
+        local _hc_mixed=$(find_user_config "mixed-port" 2>/dev/null)
+        local _hc_socks=$(find_user_config "socks-port" 2>/dev/null)
+        local _hc_http=$(find_user_config "port" 2>/dev/null)
+        [ -n "$_hc_mixed" ] && _hc_ports="$_hc_ports:$_hc_mixed"
+        [ -n "$_hc_socks" ] && _hc_ports="$_hc_ports:$_hc_socks"
+        [ -n "$_hc_http" ] && _hc_ports="$_hc_ports:$_hc_http"
+        local connections=0
+        if [ -n "$_hc_ports" ]; then
+            connections=$(ss -tn 2>/dev/null | grep -cE "$(echo "$_hc_ports" | sed 's/^://; s/:/|/g')" 2>/dev/null) || connections=0
+        fi
         echo "$health_clash_connections_msg $connections"
     else
         failed "$clash_not_running_warn_msg"
+        return 1
     fi
 }
 
@@ -3938,26 +4035,26 @@ create_profile(){
     local profile_path="${profiles_dir}/${profile_name}"
     if [ -f "$profile_path" ]; then
         failed "$profile_already_exists_msg"
-        return
+        return 1
     fi
     cp "$main_config_path" "$profile_path" 2>/dev/null && success "$profile_create_success_msg" || failed "$profile_failed_msg"
 }
 
 switch_profile(){
     if ! select_profile; then
-        return
+        return 1
     fi
     local profile_path="${profiles_dir}/${SELECTED_PROFILE}"
     if [ ! -f "$profile_path" ]; then
         failed "$profile_not_exist_msg"
-        return
+        return 1
     fi
     cp "$profile_path" "$main_config_path" && success "$profile_switch_success_msg" || failed "$profile_switch_failed_msg"
 }
 
 delete_profile(){
     if ! select_profile; then
-        return
+        return 1
     fi
     local profile_path="${profiles_dir}/${SELECTED_PROFILE}"
     if [ ! -f "$profile_path" ]; then
@@ -3968,8 +4065,11 @@ delete_profile(){
 }
 
 list_rules(){
-    refresh_status
-    $clash_is_running || { failed "$clash_not_running_warn_msg"; return 1; }
+    # list_rules 仅读取配置文件，不需要 Clash 运行
+    if [ ! -f "$main_config_path" ]; then
+        failed "$config_file_not_found_msg"
+        return 1
+    fi
     printf "%b\n" "${COLOR_CYAN}$rules_builtin_msg:${COLOR_RESET}"
     grep -E "^- RULE" "$main_config_path" 2>/dev/null | head -20 || echo "$rules_not_found_msg"
     echo ""
@@ -4006,12 +4106,14 @@ rules_add(){
         warn "$validate_rule_msg" false
         return 1
     fi
-    # 使用 yq 在 rules 数组末尾追加规则
-    "$yq_binary_path" e ".rules += [\"$_ra_rule\"]" -i "$main_config_path" 2>/dev/null
+    # 使用 yq 在 rules 数组末尾追加规则（通过 stdin 传入避免表达式注入）
+    _ra_escaped=$(printf '%s' "$_ra_rule" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    printf '%s' ".rules += [\"$_ra_escaped\"]" | "$yq_binary_path" e - -i "$main_config_path" 2>/dev/null
     if [ $? -eq 0 ]; then
         success "$rules_add_success_msg"
     else
         failed "$rules_add_failed_msg"
+        return 1
     fi
 }
 
@@ -4034,8 +4136,8 @@ requires_root() {
             is_root || return 0
             return 1
             ;;
-        "system_proxy")
-            # 系统级代理设置需要 root
+        "system_proxy"|"install_ui"|"update_ui"|"uninstall_ui")
+            # 系统级代理设置和系统目录下的 UI 安装/更新/卸载需要 root
             is_root || return 0
             return 1
             ;;
@@ -4225,8 +4327,8 @@ check_and_elevate() {
 
     # 管道安装模式：无法 exec 自身（无脚本文件），提示用户重新执行
     if [ "$_is_piped_install" = "true" ]; then
-        printf "%b\n" "${COLOR_RED}管道安装模式需要 root 权限，请使用以下命令重新执行：${COLOR_RESET}"
-        printf "%b\n" "${COLOR_YELLOW}  curl -fsSL https://raw.githubusercontent.com/$project_repo/clashtool.sh | sudo sh${COLOR_RESET}"
+        printf "%b\n" "${COLOR_RED}$(printf "$piped_root_required_msg")${COLOR_RESET}"
+        printf "%b\n" "${COLOR_YELLOW}$(printf "$piped_root_command_msg" "$project_repo")${COLOR_RESET}"
         exit 1
     fi
 
@@ -4234,6 +4336,7 @@ check_and_elevate() {
         # 非交互 shell 下先测试 passwordless sudo，避免 exec 后 sudo 失败无法捕获错误
         if ! is_interactive_shell && ! sudo -n true 2>/dev/null; then
             failed "$cannot_elevate_sudo_noninteractive_msg"
+            return 1
         fi
         # 重新以sudo方式执行当前脚本（exec成功不会返回）
         if echo "$-" | grep -q x; then
@@ -4246,7 +4349,12 @@ check_and_elevate() {
     elif has_su; then
         if is_interactive_shell; then
             printf "%b\n" "${COLOR_CYAN}${enter_root_password_msg}${COLOR_RESET}"
-            exec su -c "sh $SCRIPT_PATH $*"
+            # 构造单字符串命令，对每个参数做单引号转义以处理空格和特殊字符
+            _ce_cmd="sh '$SCRIPT_PATH'"
+            for _ce_arg in "$@"; do
+                _ce_cmd="$_ce_cmd '$(printf '%s' "$_ce_arg" | sed "s/'/'\\\\''/g")'"
+            done
+            exec su -c "$_ce_cmd"
             failed "${not_root_execute_msg}"
         else
             failed "$cannot_elevate_no_sudo_msg"
@@ -4351,7 +4459,36 @@ select_config_key() {
 }
 
 # 设置/修改配置项
+# 参数（可选）: key::value - 非交互式设置；无参数则进入交互式选择
 config_set() {
+    # 非交互式模式：参数格式 key::value
+    if [ -n "$1" ]; then
+        case "$1" in
+            *::*)
+                _cs_key="${1%%::*}"
+                _cs_val="${1#*::}"
+                ;;
+            *)
+                failed "$add_sub_parameter_failed_msg: key::value"
+                return 1
+                ;;
+        esac
+        if [ -z "$_cs_key" ] || [ -z "$_cs_val" ]; then
+            failed "$config_set_failed_msg"
+            return 1
+        fi
+        if ! validate_config_value "$_cs_key" "$_cs_val"; then
+            return 1
+        fi
+        update_user_config "$_cs_key" "$_cs_val"
+        if [ $? -eq 0 ]; then
+            success "$config_set_success_msg"
+        else
+            failed "$config_set_failed_msg" false
+        fi
+        return $?
+    fi
+    # 交互式模式
     if ! select_config_key; then
         return 1
     fi
@@ -4382,7 +4519,24 @@ config_set() {
 }
 
 # 删除配置项
+# 参数（可选）: key - 非交互式删除；无参数则进入交互式选择
 config_del() {
+    # 非交互式模式：直接指定 key
+    if [ -n "$1" ]; then
+        _cd_key="$1"
+        if [ ! -f "$user_config_path" ]; then
+            failed "$config_no_keys_msg"
+            return 1
+        fi
+        delete_user_config "$_cd_key"
+        if [ $? -eq 0 ]; then
+            success "$config_del_success_msg"
+        else
+            failed "$config_del_failed_msg" false
+        fi
+        return $?
+    fi
+    # 交互式模式
     if [ ! -f "$user_config_path" ]; then
         warn "$config_no_keys_msg" false
         return 1
@@ -4528,7 +4682,7 @@ update_check() {
     current_path=$(readlink -f "$0")
     current=$(grep '^# version:' "$current_path" | head -1 | sed 's/# version://')
     normal "${current_version_msg}$current"
-    url='https://raw.githubusercontent.com/$project_repo/clashtool.sh'
+    url="https://raw.githubusercontent.com/${project_repo}/clashtool.sh"
     version=$(curl -k -s "${github_proxy_url}${url}" | grep '^# version:' | head -1 | sed 's/# version://')
     if [ -z "$version" ];then
         failed "$get_version_failed_msg"
@@ -4637,8 +4791,19 @@ _dispatch_group() {
         esac
         ;;
     nodes)
+        # nodes 子命令依赖 TUI 交互（菜单选择），需要交互式终端
         case "$_dg_sub" in
-            select) proxy_select_group && proxy_select_server ;;
+            select|test|urltest)
+                if ! _is_interactive_terminal; then
+                    failed "$tui_unavailable_msg" false
+                    printf "%b\n" "${COLOR_YELLOW}$tui_use_cli_hint_msg${COLOR_RESET}"
+                    return 1
+                fi
+                ;;
+        esac
+        case "$_dg_sub" in
+            # proxy_select_server 内部已调用 proxy_select_group，无需重复调用
+            select) proxy_select_server ;;
             test) proxy_test_delay ;;
             urltest) proxy_url_test ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "nodes" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -4665,7 +4830,7 @@ _dispatch_group() {
         case "$_dg_sub" in
             view|"") config_view ;;
             get) config "$_dg_arg" ;;
-            set) config_set "$_dg_arg" "$4" ;;
+            set) config_set "$_dg_arg" ;;
             del) config_del "$_dg_arg" ;;
             edit) config_edit_raw ;;
             tool) clashtool "$_dg_arg" ;;
@@ -4676,21 +4841,16 @@ _dispatch_group() {
         # install 无子命令时默认安装核心+UI
         if [ -z "$_dg_sub" ]; then
             if is_root || ! requires_root "install"; then
-                install "$_dg_arg"
+                install "$_dg_arg" || return 1
                 # UI 已安装则跳过（避免 failed 退出），用户可用 update ui 更新
                 if ! is_ui_installed; then
-                    install_ui "$_dg_arg"
+                    install_ui "$_dg_arg" || return 1
                 else
                     normal "$ui_already_installed_skip_msg"
                 fi
             else
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                 check_and_elevate "$_dg_group" "all" "$_dg_arg"
-                install "$_dg_arg"
-                if ! is_ui_installed; then
-                    install_ui "$_dg_arg"
-                else
-                    normal "$ui_already_installed_skip_msg"
-                fi
             fi
             return 0
         fi
@@ -4699,16 +4859,16 @@ _dispatch_group() {
                 if is_root || ! requires_root "install"; then
                     install "$_dg_arg"
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    install "$_dg_arg"
                 fi
                 ;;
             ui)
                 if is_root || ! requires_root "install"; then
                     install_ui "$_dg_arg"
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    install_ui "$_dg_arg"
                 fi
                 ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "install" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -4718,21 +4878,16 @@ _dispatch_group() {
         # uninstall 无子命令时默认卸载全部（核心+UI）
         if [ -z "$_dg_sub" ]; then
             if is_root || ! requires_root "uninstall"; then
-                uninstall "$_dg_arg"
+                uninstall "$_dg_arg" || return 1
                 # UI 未安装则跳过（避免 failed 退出）
                 if is_ui_installed; then
-                    uninstall_ui "$_dg_arg"
+                    uninstall_ui "$_dg_arg" || return 1
                 else
                     normal "$ui_not_installed_skip_msg"
                 fi
             else
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                 check_and_elevate "$_dg_group" "all" "$_dg_arg"
-                uninstall "$_dg_arg"
-                if is_ui_installed; then
-                    uninstall_ui "$_dg_arg"
-                else
-                    normal "$ui_not_installed_skip_msg"
-                fi
             fi
             return 0
         fi
@@ -4743,35 +4898,33 @@ _dispatch_group() {
                 # uninstall() 内部已打印成功消息，此处无需重复
                 if is_root || ! requires_root "uninstall"; then
                     uninstall "all"
-                    if is_ui_installed; then
-                        uninstall_ui "$_dg_arg"
-                    else
-                        normal "$ui_not_installed_skip_msg"
-                    fi
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "all" "$_dg_arg"
-                    uninstall "all"
-                    if is_ui_installed; then
-                        uninstall_ui "$_dg_arg"
-                    else
-                        normal "$ui_not_installed_skip_msg"
-                    fi
                 fi
                 ;;
             core)
+                # uninstall core 仅接受 purge 参数（删除配置），拒绝 all（避免误删 UI）
+                case "$_dg_arg" in
+                    purge|"") _un_core_arg="$_dg_arg" ;;
+                    *)
+                        printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "uninstall core" "$_dg_arg")${COLOR_RESET}"
+                        return 1
+                        ;;
+                esac
                 if is_root || ! requires_root "uninstall"; then
-                    uninstall "$_dg_arg"
+                    uninstall "$_un_core_arg"
                 else
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    uninstall "$_dg_arg"
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                    check_and_elevate "$_dg_group" "$_dg_sub" "$_un_core_arg"
                 fi
                 ;;
             ui)
                 if is_root || ! requires_root "uninstall"; then
                     uninstall_ui "$_dg_arg"
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    uninstall_ui "$_dg_arg"
                 fi
                 ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "uninstall" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -4781,21 +4934,16 @@ _dispatch_group() {
         # update 无子命令时默认更新核心+UI
         if [ -z "$_dg_sub" ]; then
             if is_root || ! requires_root "update"; then
-                update "$_dg_arg"
+                update "$_dg_arg" || return 1
                 # UI 未安装则跳过
                 if is_ui_installed; then
-                    update_ui "$_dg_arg"
+                    update_ui "$_dg_arg" || return 1
                 else
                     normal "$ui_not_installed_skip_msg"
                 fi
             else
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                 check_and_elevate "$_dg_group" "all" "$_dg_arg"
-                update "$_dg_arg"
-                if is_ui_installed; then
-                    update_ui "$_dg_arg"
-                else
-                    normal "$ui_not_installed_skip_msg"
-                fi
             fi
             return 0
         fi
@@ -4804,16 +4952,16 @@ _dispatch_group() {
                 if is_root || ! requires_root "update"; then
                     update "$_dg_arg"
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    update "$_dg_arg"
                 fi
                 ;;
             ui)
                 if is_root || ! requires_root "update_ui"; then
                     update_ui "$_dg_arg"
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    update_ui "$_dg_arg"
                 fi
                 ;;
             script) update_script ;;
@@ -4846,8 +4994,8 @@ _dispatch_group() {
                 if is_root || ! requires_root "update_check"; then
                     update_check
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    update_check
                 fi
                 ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "system" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -4858,14 +5006,14 @@ _dispatch_group() {
             logs) view_logs ;;
             backup) backup_config ;;
             list-backups) list_backups ;;
-            restore) restore_backup "$_dg_arg" ;;
-            delete-backup) delete_backup "$_dg_arg" ;;
+            restore) restore_backup ;;
+            delete-backup) delete_backup ;;
             profiles) list_profiles ;;
-            create-profile) create_profile "$_dg_arg" ;;
-            switch-profile) switch_profile "$_dg_arg" ;;
-            delete-profile) delete_profile "$_dg_arg" ;;
+            create-profile) create_profile ;;
+            switch-profile) switch_profile ;;
+            delete-profile) delete_profile ;;
             rules) list_rules ;;
-            add-rule) rules_add "$_dg_arg" ;;
+            add-rule) rules_add ;;
             edit-rules) rules_edit ;;
             health) health_check ;;
             toggle-recovery) toggle_auto_recovery ;;
@@ -4894,7 +5042,12 @@ main() {
     if is_sourced;then
         # source 模式仅支持 proxy on/off
         if [ "$fun" = "proxy" ]; then
-            proxy "$var"
+            # 将 on/off 转换为 true/false（proxy() 函数期望的参数）
+            case "$var" in
+                on|true) proxy true ;;
+                off|false) proxy false ;;
+                *) proxy "$var" ;;
+            esac
         else
             failed "$non_proxy_source_msg" false
         fi
@@ -4909,8 +5062,8 @@ main() {
                 if is_root || ! requires_root "$fun"; then
                     "$fun" "$var"
                 else
+                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
                     check_and_elevate "$fun" "$var" "$3"
-                    "$fun" "$var"
                 fi
                 return
                 ;;
@@ -4928,7 +5081,7 @@ main() {
             
             # 检查 stty 命令（TUI 需要）
             if ! command -v stty >/dev/null 2>&1; then
-                remind "$require_check_msg: stty not found, attempting to install..." false
+                remind "$tui_stty_check_msg" false
                 if is_root || check_and_elevate "install" "util-linux"; then
                     install_procedure "util-linux"
                     if ! command -v stty >/dev/null 2>&1; then
@@ -4943,7 +5096,7 @@ main() {
             if [ "$_tui_ready" = "true" ]; then
                 _tui_module_path="$(dirname "$(readlink -f "$0")")/clashtool_tui.sh"
                 if [ ! -f "$_tui_module_path" ]; then
-                    remind "TUI module not found, attempting to download..." false
+                    remind "$tui_module_not_found_msg" false
                     curl -s --max-time 20 -o "$_tui_module_path.download" "${github_proxy_url}https://raw.githubusercontent.com/$project_repo/clashtool_tui.sh" 2>/dev/null
                     if [ -f "$_tui_module_path.download" ] && grep -q '^#' "$_tui_module_path.download" 2>/dev/null; then
                         mv "$_tui_module_path.download" "$_tui_module_path"
@@ -4984,15 +5137,15 @@ main() {
                         repair_symlink 2>/dev/null
                     fi
                 fi
-                # 用户级安装不需要提权进入菜单
-                if is_root; then
-                    check_and_elevate "$@"
+                # 非 root 用户且需要提权时，通过 sudo 重新执行
+                if ! is_root; then
+                    check_and_elevate "$@" || exit 1
                 fi
-                tui_main_menu
+                menu
             else
                 # TUI 不可用：报错退出
-                failed "TUI mode unavailable. Missing dependencies or non-interactive terminal." false
-                printf "%b\n" "${COLOR_YELLOW}Please install required dependencies or use command line mode:${COLOR_RESET}"
+                failed "$tui_unavailable_msg" false
+                printf "%b\n" "${COLOR_YELLOW}$tui_use_cli_hint_msg${COLOR_RESET}"
                 printf "%b\n" "${COLOR_YELLOW}  clashtool start|stop|restart|reload|status${COLOR_RESET}"
                 printf "%b\n" "${COLOR_YELLOW}  clashtool install|update|uninstall${COLOR_RESET}"
                 printf "%b\n" "${COLOR_YELLOW}  clashtool help${COLOR_RESET}"

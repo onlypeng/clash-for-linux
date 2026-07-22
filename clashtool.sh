@@ -213,16 +213,20 @@ clash_is_running=false
 refresh_status
 # ==================== UI Format Configuration ====================
 # ANSI color codes
-COLOR_RESET="\033[0m"
-COLOR_RED="\033[31m"
-COLOR_GREEN="\033[32m"
-COLOR_YELLOW="\033[33m"
-COLOR_BLUE="\033[34m"
-COLOR_PURPLE="\033[35m"
-COLOR_CYAN="\033[36m"
-COLOR_WHITE="\033[37m"
-COLOR_BOLD="\033[1m"
-COLOR_DIM="\033[2m"
+# 使用真实 ESC 字符（而非字面量 \033），确保 printf "%s" 和 "%b" 均能正确渲染颜色。
+# 这样菜单项中嵌入的颜色码（如状态标签 [ON]/[OFF]）即使用 %s 打印也能正常着色，
+# 同时避免对菜单项中的用户数据（服务器名等）使用 %b 而误解释反斜杠转义。
+ESC=$(printf '\033')
+COLOR_RESET="${ESC}[0m"
+COLOR_RED="${ESC}[31m"
+COLOR_GREEN="${ESC}[32m"
+COLOR_YELLOW="${ESC}[33m"
+COLOR_BLUE="${ESC}[34m"
+COLOR_PURPLE="${ESC}[35m"
+COLOR_CYAN="${ESC}[36m"
+COLOR_WHITE="${ESC}[37m"
+COLOR_BOLD="${ESC}[1m"
+COLOR_DIM="${ESC}[2m"
 
 
 _is_interactive_terminal() {
@@ -287,7 +291,7 @@ TUI_ENABLED=false
 # 用于 tui_clear/pause_prompt/get_input/tui_confirm 等函数判断模式
 
 # === TUI constants (part 2) ===
-TUI_HIGHLIGHT_INVERT="\033[7m"
+TUI_HIGHLIGHT_INVERT="${ESC}[7m"
 # 使用 printf 在运行时生成 UTF-8 箭头字符 ▶ (U+25B6)
 TUI_ARROW=$(printf '\342\226\266')
 TUI_ARROW_FALLBACK=">"
@@ -322,6 +326,8 @@ tui_status_off_label="[OFF]"
 tui_status_na_root_label="[N/A - need root]"
 tui_unavailable_msg="TUI mode unavailable. Missing dependencies or non-interactive terminal."
 tui_use_cli_hint_msg="Please install required dependencies or use command line mode:"
+tui_form_nav_hint="[Tab/Down] Next  [Up] Prev  [Enter] Submit  [Esc] Cancel"
+tui_form_field_required_msg="%s cannot be empty"
 
 # === TUI detection and rendering ===
 # ==================== TUI 基础组件 ====================
@@ -462,6 +468,17 @@ tui_draw_menu() {
     shift 3
     _tdm_i=0
     _tdm_arrow=$(tui_get_arrow)
+    # 前缀槽宽度 = 箭头 + 1 空格；非选中项用等宽空格填充同一槽位
+    _tdm_prefix_w=$(( $(str_display_width "$_tdm_arrow") + 1 ))
+    # 文本固定起始列：║ 占 col 1，前缀槽占 col 2..(1+prefix_w)，文本从 col (2+prefix_w) 开始
+    # 用 ANSI 绝对定位固定此列，无论 ▶ 实际渲染为 1 或 2 列宽，选中/非选中文本起始列都一致
+    _tdm_text_col=$(( 2 + _tdm_prefix_w ))
+    _tdm_inactive_prefix=""
+    _tdm_k=0
+    while [ "$_tdm_k" -lt "$_tdm_prefix_w" ]; do
+        _tdm_inactive_prefix="${_tdm_inactive_prefix} "
+        _tdm_k=$((_tdm_k + 1))
+    done
 
     # 隐藏光标 + 移动到左上角，不清屏（避免闪烁和光标残影）
     printf "\033[?25l\033[H"
@@ -469,7 +486,12 @@ tui_draw_menu() {
     # 标题栏
     printf "%b" "${COLOR_CYAN}${COLOR_BOLD}"
     printf "%s\033[K\n" "$MENU_BORDER_TOP"
-    _tw=$(str_display_width "$_tdm_title")
+    # 使用缓存的标题宽度（由 tui_menu_select 预计算），避免每次渲染 fork 子进程
+    if [ -n "$_TMS_TITLE_W" ]; then
+        _tw="$_TMS_TITLE_W"
+    else
+        _tw=$(str_display_width "$_tdm_title")
+    fi
     _tp=$(( MENU_CONTENT_WIDTH - _tw ))
     [ "$_tp" -lt 0 ] && _tp=0
     _tpl=$(( _tp / 2 ))
@@ -484,46 +506,137 @@ tui_draw_menu() {
 
     # 菜单项
     for _tdm_item in "$@"; do
-        if [ "$_tdm_i" -eq "$_tdm_selected" ]; then
-            # 选中项：反色 + 箭头标记（不使用 COLOR_RESET 以避免中断反色效果）
-            _tdm_prefix="${TUI_HIGHLIGHT_INVERT}${COLOR_CYAN}${_tdm_arrow} ${TUI_HIGHLIGHT_INVERT}"
-            _tdm_item_color="${COLOR_BOLD}${COLOR_WHITE}"
-            _tdm_pad_offset=0
-        else
-            _tdm_prefix="  "
-            _tdm_item_color="$COLOR_WHITE"
-            _tdm_pad_offset=0
-        fi
         printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
-        printf "%b" "${_tdm_prefix}${_tdm_item_color}${_tdm_item}${COLOR_RESET}"
-        # 计算填充宽度：内容总宽 = prefix(2) + item(_iw) + padding = MENU_CONTENT_WIDTH
-        _iw=$(str_display_width "$_tdm_item")
-        _pad=$(( MENU_CONTENT_WIDTH - _iw - 2 + _tdm_pad_offset ))
+        if [ "$_tdm_i" -eq "$_tdm_selected" ]; then
+            # 选中项：反色高亮 + 箭头标记
+            # 先用反色空格填满前缀槽，回到槽首打印箭头，再用 ANSI 绝对定位将文本固定到 _tdm_text_col
+            # 这样无论 ▶ 实际渲染为 1 或 2 列宽，文本起始列都与非选中项一致，消除选中项向左偏移
+            printf "%b" "${TUI_HIGHLIGHT_INVERT}${COLOR_CYAN}"
+            printf "%${_tdm_prefix_w}s" ""
+            printf "\033[2G%s " "$_tdm_arrow"
+            printf "\033[%dG" "$_tdm_text_col"
+            printf "%b%s%b" "${COLOR_BOLD}${COLOR_WHITE}" "$_tdm_item" "${COLOR_RESET}"
+        else
+            # 非选中项：等宽空格前缀（与选中箭头前缀同宽）+ 普通色
+            printf "%s" "$_tdm_inactive_prefix"
+            printf "%b%s%b" "${COLOR_WHITE}" "$_tdm_item" "${COLOR_RESET}"
+        fi
+        # 使用缓存的菜单项宽度（由 tui_menu_select 预计算），避免每次渲染 fork 子进程
+        eval "_iw=\"\$_TMS_W_${_tdm_i}\""
+        if [ -z "$_iw" ]; then
+            _iw=$(str_display_width "$_tdm_item")
+        fi
+        _pad=$(( MENU_CONTENT_WIDTH - _iw - _tdm_prefix_w ))
         [ "$_pad" -lt 0 ] && _pad=0
         printf "%${_pad}s" ""
         printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
         _tdm_i=$((_tdm_i + 1))
     done
 
-    # 状态栏
+    # 按键提示栏（原运行状态栏，现改为按键操作提示）
     printf "%b" "${COLOR_CYAN}"
     printf "%s\033[K\n" "$MENU_BORDER_MID"
-    if $clash_is_running; then
-        _tdm_status=" [RUNNING] Clash PID: ${clash_pid:-N/A}"
+    # 使用缓存的提示文本和宽度（由 tui_menu_select 预计算），避免每次渲染 fork 子进程
+    if [ -n "$_TMS_STATUS_TEXT" ]; then
+        _tdm_status="$_TMS_STATUS_TEXT"
+        _sw="$_TMS_STATUS_W"
     else
-        _tdm_status=" [STOPPED] Clash not running"
+        _tdm_status="$tui_menu_nav_hint"
+        _sw=$(str_display_width "$_tdm_status")
     fi
+    printf "%b" "${COLOR_DIM}"
     printf "%s%s" "$MENU_LINE" "$_tdm_status"
-    _sw=$(str_display_width "$_tdm_status")
     _spad=$(( MENU_CONTENT_WIDTH - _sw ))
     [ "$_spad" -lt 0 ] && _spad=0
     printf "%${_spad}s" ""
-    printf "%b\n" "\033[${MENU_RIGHT_COL}G${MENU_LINE}\033[K"
+    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
     printf "%s\033[K\n" "$MENU_BORDER_BOT"
     printf "%b" "${COLOR_RESET}"
 
     # 清除屏幕剩余内容（如果新内容比旧内容短）
     printf "\033[J"
+}
+
+# 处理菜单导航按键（供 tui_menu_select 主循环和排空循环复用）
+# 输入: TUI_KEY (由 tui_read_key 设置)
+# 依赖: _tms_total, _tms_selected (全局)
+# 输出: _tms_action = "nav"(导航键,继续) | "action"(动作键,退出) | "ignore"(忽略)
+#       MENU_RESULT (动作键时设置)
+_tms_process_key() {
+    case "$TUI_KEY" in
+        UP|k)
+            _tms_selected=$((_tms_selected - 1))
+            [ "$_tms_selected" -lt 0 ] && _tms_selected=$((_tms_total - 1))
+            _tms_action="nav"
+            ;;
+        DOWN|j)
+            _tms_selected=$((_tms_selected + 1))
+            [ "$_tms_selected" -ge "$_tms_total" ] && _tms_selected=0
+            _tms_action="nav"
+            ;;
+        HOME)
+            _tms_selected=0
+            _tms_action="nav"
+            ;;
+        END)
+            _tms_selected=$((_tms_total - 1))
+            _tms_action="nav"
+            ;;
+        PGUP)
+            _tms_selected=$((_tms_selected - 5))
+            [ "$_tms_selected" -lt 0 ] && _tms_selected=0
+            _tms_action="nav"
+            ;;
+        PGDN)
+            _tms_selected=$((_tms_selected + 5))
+            [ "$_tms_selected" -ge "$_tms_total" ] && _tms_selected=$((_tms_total - 1))
+            _tms_action="nav"
+            ;;
+        CTRL_C|CTRL_Q)
+            MENU_RESULT="QUIT"
+            _tms_action="action"
+            ;;
+        ENTER)
+            MENU_RESULT="$_tms_selected"
+            _tms_action="action"
+            ;;
+        ESC)
+            MENU_RESULT="BACK"
+            _tms_action="action"
+            ;;
+        [0-9])
+            _tpk_idx=$((TUI_KEY + 0))
+            if [ "$_tpk_idx" -ge 0 ] && [ "$_tpk_idx" -lt "$_tms_total" ]; then
+                MENU_RESULT="$_tpk_idx"
+                _tms_action="action"
+            else
+                _tms_action="ignore"
+            fi
+            ;;
+        [a-z])
+            _tpk_idx=$(printf '%d' "'$TUI_KEY")
+            _tpk_idx=$((_tpk_idx - 97 + 10))
+            if [ "$_tpk_idx" -ge 0 ] && [ "$_tpk_idx" -lt "$_tms_total" ]; then
+                MENU_RESULT="$_tpk_idx"
+                _tms_action="action"
+            else
+                _tms_action="ignore"
+            fi
+            ;;
+        [A-Z])
+            _tpk_idx=$(printf '%d' "'$TUI_KEY")
+            _tpk_idx=$((_tpk_idx - 65 + 10))
+            if [ "$_tpk_idx" -ge 0 ] && [ "$_tpk_idx" -lt "$_tms_total" ]; then
+                MENU_RESULT="$_tpk_idx"
+                _tms_action="action"
+            else
+                _tms_action="ignore"
+            fi
+            ;;
+        *)
+            _tms_action="ignore"
+            ;;
+    esac
 }
 
 # 结果通过全局变量 MENU_RESULT 返回
@@ -547,6 +660,23 @@ tui_menu_select() {
     _tms_interrupted=false
     trap '_tms_interrupted=true' INT
 
+    # === 性能优化：预计算菜单项显示宽度 ===
+    # str_display_width 每次调用产生 3 个子进程 (sed+od+awk)，10 个菜单项 = 33 个 fork
+    # 预计算后每次渲染零子进程 fork，大幅减少按键延迟
+    _tms_widx=0
+    for _tms_witem in "$@"; do
+        eval "_TMS_W_${_tms_widx}=\$(str_display_width \"\$_tms_witem\")"
+        _tms_widx=$((_tms_widx + 1))
+    done
+    _TMS_W_COUNT="$_tms_widx"
+    _TMS_TITLE_W=$(str_display_width "$_tms_title")
+
+    # === 状态栏改为按键提示（原运行状态信息已移除，由按键提示替代） ===
+    # refresh_status 仍保留以刷新 clash_is_running 等状态（主菜单标签依赖）
+    refresh_status
+    _TMS_STATUS_TEXT="$tui_menu_nav_hint"
+    _TMS_STATUS_W=$(str_display_width "$_TMS_STATUS_TEXT")
+
     # 进入菜单前清屏一次，清除之前命令输出的残留
     printf "\033[2J"
 
@@ -557,69 +687,47 @@ tui_menu_select() {
             break
         fi
 
-        # 刷新Clash运行状态，确保状态栏准确
-        refresh_status
+        # 渲染菜单（使用预计算的宽度缓存，避免每次渲染都 fork 子进程）
         tui_draw_menu "$_tms_title" "$_tms_selected" "$_tms_total" "$@"
-        tui_read_key
 
-        case "$TUI_KEY" in
-            UP|k)
-                _tms_selected=$((_tms_selected - 1))
-                [ "$_tms_selected" -lt 0 ] && _tms_selected=$((_tms_total - 1))
-                ;;
-            DOWN|j)
-                _tms_selected=$((_tms_selected + 1))
-                [ "$_tms_selected" -ge "$_tms_total" ] && _tms_selected=0
-                ;;
-            CTRL_C|CTRL_Q)
-                MENU_RESULT="QUIT"
-                break
-                ;;
-            ENTER)
-                MENU_RESULT="$_tms_selected"
-                break
-                ;;
-            ESC)
-                MENU_RESULT="BACK"
-                break
-                ;;
-            [0-9])
-                _tms_idx=$((TUI_KEY + 0))
-                if [ "$_tms_idx" -ge 0 ] && [ "$_tms_idx" -lt "$_tms_total" ]; then
-                    MENU_RESULT="$_tms_idx"
+        # 读取按键（阻塞模式，等待用户输入）
+        tui_read_key
+        _tms_process_key
+
+        # 动作键（ENTER/ESC/数字/字母快捷键）：直接退出循环
+        if [ "$_tms_action" = "action" ]; then
+            break
+        fi
+
+        # 导航键：排空输入缓冲区（快速连按优化）
+        # 用户快速连按方向键时，后续按键在终端缓冲区排队。此处用非阻塞模式
+        # 读取并处理排队的按键，仅在缓冲区空时才渲染，避免每键都触发完整渲染。
+        # 效果：按住方向键快速移动时，只在最后渲染一次，而非每键渲染一次。
+        if [ "$_tms_action" = "nav" ]; then
+            _tms_drain_break=false
+            while true; do
+                # 非阻塞模式 (min 0 = 不阻塞, time 0 = 立即返回)
+                stty -echo -icanon onlcr min 0 time 0 </dev/tty 2>/dev/null
+                tui_read_key
+                # tui_read_key 处理转义序列后可能恢复为阻塞模式，需在下次循环前重设
+                if [ -z "$TUI_KEY" ]; then
+                    # 缓冲区为空，退出排空循环，回到主循环渲染
                     break
                 fi
-                ;;
-            HOME) _tms_selected=0 ;;
-            END) _tms_selected=$((_tms_total - 1)) ;;
-            PGUP)
-                _tms_selected=$((_tms_selected - 5))
-                [ "$_tms_selected" -lt 0 ] && _tms_selected=0
-                ;;
-            PGDN)
-                _tms_selected=$((_tms_selected + 5))
-                [ "$_tms_selected" -ge "$_tms_total" ] && _tms_selected=$((_tms_total - 1))
-                ;;
-            [a-z])
-                # 字母键映射为数字快捷键：a=10, b=11, c=12, ...
-                _tms_idx=$(printf '%d' "'$TUI_KEY")
-                _tms_idx=$((_tms_idx - 97 + 10))
-                if [ "$_tms_idx" -ge 0 ] && [ "$_tms_idx" -lt "$_tms_total" ]; then
-                    MENU_RESULT="$_tms_idx"
+                _tms_process_key
+                if [ "$_tms_action" = "action" ]; then
+                    _tms_drain_break=true
                     break
                 fi
-                ;;
-            [A-Z])
-                # 大写字母键映射为数字快捷键：A=10, B=11, C=12, ...
-                _tms_idx=$(printf '%d' "'$TUI_KEY")
-                _tms_idx=$((_tms_idx - 65 + 10))
-                if [ "$_tms_idx" -ge 0 ] && [ "$_tms_idx" -lt "$_tms_total" ]; then
-                    MENU_RESULT="$_tms_idx"
-                    break
-                fi
-                ;;
-            *) ;;
-        esac
+                # _tms_action = "nav" 或 "ignore" 时继续排空
+            done
+            # 恢复阻塞模式
+            stty -echo -icanon onlcr min 1 time 0 </dev/tty 2>/dev/null
+            # 排空时收到动作键（ENTER/ESC/数字/字母），退出主循环
+            if [ "$_tms_drain_break" = "true" ]; then
+                break
+            fi
+        fi
     done
 
     # 保存当前选中位置（按菜单标题存储，返回时恢复）
@@ -628,6 +736,14 @@ tui_menu_select() {
         QUIT) ;;
         *) eval "$_tms_key=$_tms_selected" ;;
     esac
+
+    # 清理宽度缓存变量，避免污染后续菜单
+    _tms_widx=0
+    while [ "$_tms_widx" -lt "$_TMS_W_COUNT" ] 2>/dev/null; do
+        unset "_TMS_W_${_tms_widx}" 2>/dev/null
+        _tms_widx=$((_tms_widx + 1))
+    done
+    unset _TMS_W_COUNT _TMS_TITLE_W _TMS_STATUS_TEXT _TMS_STATUS_W 2>/dev/null
 
     # 恢复终端状态（明确操作 /dev/tty）
     stty "$_tms_old_tty" </dev/tty 2>/dev/null
@@ -725,8 +841,11 @@ tui_input() {
     printf "\033[J"
 
     # 使用原始模式逐字符读取，检测 ESC 键
-    stty -echo -icanon min 1 time 0 </dev/tty 2>/dev/null
-    printf "%b" "${COLOR_GREEN}> ${COLOR_RESET}"
+    # -icrnl: 禁用 CR→NL 翻译，使 Enter 保持为 CR (ASCII 13)，避免被 $() 命令替换剥离尾部换行符
+    # onlcr: 确保输出 \n 时翻译为 CR-NL，光标正确回到行首
+    stty -echo -icanon -icrnl onlcr min 1 time 0 </dev/tty 2>/dev/null
+    _ti_arrow=$(tui_get_arrow)
+    printf "%b%s%b" "${COLOR_CYAN}" "${_ti_arrow} " "${COLOR_RESET}"
     _ti_buf=""
 
     while true; do
@@ -738,7 +857,7 @@ tui_input() {
         case "$_ti_ch_val" in
             27)
                 _ti_old_tout=$(stty -g </dev/tty 2>/dev/null)
-                stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null
+                stty -echo -icanon -icrnl min 0 time 1 </dev/tty 2>/dev/null
                 _ti_next=$(dd bs=1 count=6 2>/dev/null </dev/tty)
                 stty "$_ti_old_tout" </dev/tty 2>/dev/null
                 if [ -z "$_ti_next" ]; then
@@ -787,6 +906,268 @@ tui_input() {
 
     # 恢复原始终端状态
     stty "$_ti_old_tty" </dev/tty 2>/dev/null
+    trap - INT
+    return 0
+}
+
+# === TUI 多字段表单（内部绘制函数）===
+# 依赖全局变量（由 tui_form 设置）：
+#   _tf_title, _tf_count, _tf_prompt_<i>, _tf_value_<i>,
+#   _tf_current, _tf_error, _tf_nav_hint
+_tf_draw_form() {
+    _tfd_arrow=$(tui_get_arrow)
+    # 前缀槽宽度 = 箭头 + 1 空格；非活动字段用等宽空格填充同一槽位
+    _tfd_prefix_w=$(( $(str_display_width "$_tfd_arrow") + 1 ))
+    # 文本固定起始列：║ 占 col 1，前缀槽占 col 2..(1+prefix_w)，文本从 col (2+prefix_w) 开始
+    # 用 ANSI 绝对定位固定此列，无论 ▶ 实际渲染为 1 或 2 列宽，活动/非活动字段文本起始列都一致
+    _tfd_text_col=$(( 2 + _tfd_prefix_w ))
+    _tfd_inactive_prefix=""
+    _tfd_k=0
+    while [ "$_tfd_k" -lt "$_tfd_prefix_w" ]; do
+        _tfd_inactive_prefix="${_tfd_inactive_prefix} "
+        _tfd_k=$((_tfd_k + 1))
+    done
+
+    # 隐藏光标 + 定位左上角（不清屏，用 \033[K 逐行清除避免闪烁）
+    printf "\033[?25l\033[H"
+
+    # === 顶部边框 ===
+    printf "%b" "${COLOR_CYAN}${COLOR_BOLD}"
+    printf "%s\033[K\n" "$MENU_BORDER_TOP"
+
+    # === 标题行（居中）===
+    _tfd_tw=$(str_display_width "$_tf_title")
+    _tfd_tp=$(( MENU_CONTENT_WIDTH - _tfd_tw ))
+    [ "$_tfd_tp" -lt 0 ] && _tfd_tp=0
+    _tfd_tpl=$(( _tfd_tp / 2 ))
+    printf "%s" "$MENU_LINE"
+    [ "$_tfd_tpl" -gt 0 ] && printf "%${_tfd_tpl}s" ""
+    printf "%b" "$_tf_title"
+    _tfd_trp=$(( _tfd_tp - _tfd_tpl ))
+    [ "$_tfd_trp" -gt 0 ] && printf "%${_tfd_trp}s" ""
+    printf "%b\n" "\033[${MENU_RIGHT_COL}G${MENU_LINE}\033[K"
+    printf "%s\033[K\n" "$MENU_BORDER_MID"
+    printf "%b" "${COLOR_RESET}"
+
+    # === 字段行 ===
+    _tfd_active_pw=0
+    _tfd_active_vw=0
+    _tfd_i=0
+    while [ "$_tfd_i" -lt "$_tf_count" ]; do
+        eval "_tfd_prompt=\"\$_tf_prompt_${_tfd_i}\""
+        eval "_tfd_value=\"\$_tf_value_${_tfd_i}\""
+        _tfd_pw=$(str_display_width "$_tfd_prompt")
+        _tfd_vw=$(str_display_width "$_tfd_value")
+
+        printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
+
+        if [ "$_tfd_i" -eq "$_tf_current" ]; then
+            # 活动字段：反色 + 箭头 + 高亮（与菜单选中项样式统一，反色覆盖箭头/标签/值）
+            # 先用反色空格填满前缀槽，回到槽首打印箭头，再用 ANSI 绝对定位将文本固定到 _tfd_text_col
+            # 这样无论 ▶ 实际渲染为 1 或 2 列宽，文本起始列都与非活动字段一致，消除选中项向左偏移
+            printf "%b" "${TUI_HIGHLIGHT_INVERT}${COLOR_CYAN}"
+            printf "%${_tfd_prefix_w}s" ""
+            printf "\033[2G%s " "$_tfd_arrow"
+            printf "\033[%dG" "$_tfd_text_col"
+            printf "%b%s" "${COLOR_BOLD}${COLOR_WHITE}" "$_tfd_prompt"
+            printf " "
+            printf "%b%s%b" "${COLOR_BOLD}${COLOR_CYAN}" "$_tfd_value" "${COLOR_RESET}"
+            _tfd_active_pw="$_tfd_pw"
+            _tfd_active_vw="$_tfd_vw"
+        else
+            # 非活动字段：等宽空格前缀（与活动箭头前缀同宽）+ 普通色（白色标签 + 青色数据）
+            printf "%s" "$_tfd_inactive_prefix"
+            printf "%b%s%b " "${COLOR_WHITE}" "$_tfd_prompt" "${COLOR_RESET}"
+            printf "%b%s%b" "${COLOR_CYAN}" "$_tfd_value" "${COLOR_RESET}"
+        fi
+
+        # 填充到右边界（prefix + prompt + 1空格 + value）
+        _tfd_content_w=$(( _tfd_prefix_w + _tfd_pw + 1 + _tfd_vw ))
+        _tfd_pad=$(( MENU_CONTENT_WIDTH - _tfd_content_w ))
+        [ "$_tfd_pad" -lt 0 ] && _tfd_pad=0
+        printf "%${_tfd_pad}s" ""
+        printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+
+        _tfd_i=$((_tfd_i + 1))
+    done
+
+    # === 分隔线 ===
+    printf "%b" "${COLOR_CYAN}"
+    printf "%s\033[K\n" "$MENU_BORDER_MID"
+
+    # === 状态行：错误消息或导航提示 ===
+    printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
+    if [ -n "$_tf_error" ]; then
+        printf " %b" "${COLOR_RED}${COLOR_BOLD}${_tf_error}${COLOR_RESET}"
+        _tfd_sw=$(str_display_width "$_tf_error")
+    else
+        printf " %b" "${COLOR_DIM}${_tf_nav_hint}${COLOR_RESET}"
+        _tfd_sw=$(str_display_width "$_tf_nav_hint")
+    fi
+    _tfd_spad=$(( MENU_CONTENT_WIDTH - _tfd_sw - 1 ))
+    [ "$_tfd_spad" -lt 0 ] && _tfd_spad=0
+    printf "%${_tfd_spad}s" ""
+    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+
+    # === 底部边框 ===
+    printf "%s\033[K\n" "$MENU_BORDER_BOT"
+    printf "%b" "${COLOR_RESET}"
+    printf "\033[J"
+
+    # === 光标定位到活动字段值末尾 ===
+    # 行: 1(顶边框) + 1(标题) + 1(分隔线) + _tf_current → ANSI 1-indexed: 4 + _tf_current
+    # 列: 1(║) + prefix_w + prompt_width + 1(空格) + value_width → ANSI 1-indexed: 3 + prefix_w + pw + vw
+    _tfd_cursor_row=$(( 4 + _tf_current ))
+    _tfd_cursor_col=$(( 3 + _tfd_prefix_w + _tfd_active_pw + _tfd_active_vw ))
+    [ "$_tfd_cursor_col" -ge "$MENU_RIGHT_COL" ] && _tfd_cursor_col=$(( MENU_RIGHT_COL - 1 ))
+    printf "\033[%d;%dH" "$_tfd_cursor_row" "$_tfd_cursor_col"
+    printf "\033[?25h"
+}
+
+# === TUI 多字段表单 ===
+# 参数: $1=标题,  $2..$N=字段定义 "提示文本::默认值::允许空" 或 "提示文本::允许空"
+# 输出全局变量:
+#   FORM_CANCELED (true/false)
+#   FORM_FIELD_COUNT, FORM_FIELD_0..N-1
+tui_form() {
+    _tf_title="$1"
+    shift
+    FORM_CANCELED=false
+    FORM_FIELD_COUNT=0
+
+    # === 解析字段定义 ===
+    _tf_count=0
+    for _tf_def in "$@"; do
+        _tf_nf=$(printf '%s' "$_tf_def" | awk -F'::' '{print NF}')
+        _tf_prompt=$(printf '%s' "$_tf_def" | awk -F'::' '{print $1}')
+        if [ "$_tf_nf" = "3" ]; then
+            _tf_default=$(printf '%s' "$_tf_def" | awk -F'::' '{print $2}')
+            _tf_allow_empty=$(printf '%s' "$_tf_def" | awk -F'::' '{print $3}')
+        else
+            _tf_default=""
+            _tf_allow_empty=$(printf '%s' "$_tf_def" | awk -F'::' '{print $2}')
+        fi
+        [ -z "$_tf_allow_empty" ] && _tf_allow_empty="false"
+
+        eval "_tf_prompt_${_tf_count}=\$_tf_prompt"
+        eval "_tf_value_${_tf_count}=\$_tf_default"
+        eval "_tf_allow_empty_${_tf_count}=\$_tf_allow_empty"
+        _tf_count=$((_tf_count + 1))
+    done
+    FORM_FIELD_COUNT="$_tf_count"
+
+    # 空表单直接返回
+    if [ "$_tf_count" -eq 0 ]; then
+        FORM_CANCELED=true
+        return 1
+    fi
+
+    _tf_current=0
+    _tf_error=""
+    _tf_nav_hint="$tui_form_nav_hint"
+
+    # === 终端设置 ===
+    _tf_old_tty=$(stty -g </dev/tty 2>/dev/null)
+    _tf_interrupted=false
+    trap '_tf_interrupted=true' INT
+    stty -echo -icanon onlcr min 1 time 0 </dev/tty 2>/dev/null
+
+    # 初始清屏
+    printf "\033[2J"
+
+    # === 主循环 ===
+    while true; do
+        if [ "$_tf_interrupted" = "true" ]; then
+            FORM_CANCELED=true
+            break
+        fi
+
+        _tf_draw_form
+        tui_read_key
+
+        case "$TUI_KEY" in
+            CTRL_C|ESC)
+                FORM_CANCELED=true
+                printf "\n"
+                break
+                ;;
+            ENTER)
+                # 验证必填字段
+                _tf_valid=true
+                _tf_error=""
+                _tf_i=0
+                while [ "$_tf_i" -lt "$_tf_count" ]; do
+                    eval "_tf_ae=\"\$_tf_allow_empty_${_tf_i}\""
+                    eval "_tf_v=\"\$_tf_value_${_tf_i}\""
+                    if [ "$_tf_ae" != "true" ] && [ -z "$_tf_v" ]; then
+                        eval "_tf_p=\"\$_tf_prompt_${_tf_i}\""
+                        _tf_error="$(printf "$tui_form_field_required_msg" "$_tf_p")"
+                        _tf_current="$_tf_i"
+                        _tf_valid=false
+                        break
+                    fi
+                    _tf_i=$((_tf_i + 1))
+                done
+                if [ "$_tf_valid" = "true" ]; then
+                    printf "\n"
+                    break
+                fi
+                ;;
+            TAB|DOWN)
+                _tf_current=$((_tf_current + 1))
+                [ "$_tf_current" -ge "$_tf_count" ] && _tf_current=0
+                _tf_error=""
+                ;;
+            UP)
+                _tf_current=$((_tf_current - 1))
+                [ "$_tf_current" -lt 0 ] && _tf_current=$((_tf_count - 1))
+                _tf_error=""
+                ;;
+            BACKSPACE)
+                eval "_tf_v=\"\$_tf_value_${_tf_current}\""
+                if [ -n "$_tf_v" ]; then
+                    _tf_new=$(printf '%s' "$_tf_v" | sed 's/.$//')
+                    eval "_tf_value_${_tf_current}=\$_tf_new"
+                fi
+                _tf_error=""
+                ;;
+            '')
+                # 空键（未知转义序列），忽略
+                ;;
+            *)
+                # 普通可打印字符：仅接受单字符（排除 LEFT/RIGHT/HOME 等命名键）
+                if [ ${#TUI_KEY} -eq 1 ] 2>/dev/null; then
+                    _tf_kc=$(printf '%d' "'$TUI_KEY" 2>/dev/null || echo 0)
+                    if [ "$_tf_kc" -ge 32 ] 2>/dev/null; then
+                        eval "_tf_v=\"\$_tf_value_${_tf_current}\""
+                        _tf_new="${_tf_v}${TUI_KEY}"
+                        eval "_tf_value_${_tf_current}=\$_tf_new"
+                        _tf_error=""
+                    fi
+                fi
+                ;;
+        esac
+    done
+
+    # === 输出结果 ===
+    if [ "$FORM_CANCELED" != "true" ]; then
+        _tf_i=0
+        while [ "$_tf_i" -lt "$_tf_count" ]; do
+            eval "FORM_FIELD_${_tf_i}=\"\$_tf_value_${_tf_i}\""
+            _tf_i=$((_tf_i + 1))
+        done
+    fi
+
+    # === 清理临时变量 ===
+    _tf_i=0
+    while [ "$_tf_i" -lt "$_tf_count" ] 2>/dev/null; do
+        unset "_tf_prompt_${_tf_i}" "_tf_value_${_tf_i}" "_tf_allow_empty_${_tf_i}" 2>/dev/null
+        _tf_i=$((_tf_i + 1))
+    done
+
+    # === 恢复终端 ===
+    stty "$_tf_old_tty" </dev/tty 2>/dev/null
+    printf "\033[?25h"
     trap - INT
     return 0
 }
@@ -937,6 +1318,64 @@ get_input() {
     fi
 }
 
+# get_form: tui_form 的包装器，处理交互/非交互模式
+# 参数与 tui_form 相同: $1=标题, $2..$N=字段定义
+# 输出: GET_FORM_CANCELED, GET_FORM_FIELD_COUNT, GET_FORM_FIELD_0..N-1
+get_form() {
+    _gf_title="$1"
+    shift
+    GET_FORM_CANCELED=false
+    GET_FORM_FIELD_COUNT=0
+
+    if _is_interactive_terminal; then
+        # === 交互模式 ===
+        tui_form "$_gf_title" "$@"
+        GET_FORM_CANCELED="$FORM_CANCELED"
+        GET_FORM_FIELD_COUNT="$FORM_FIELD_COUNT"
+        _gf_i=0
+        while [ "$_gf_i" -lt "$FORM_FIELD_COUNT" ] 2>/dev/null; do
+            eval "GET_FORM_FIELD_${_gf_i}=\"\$FORM_FIELD_${_gf_i}\""
+            _gf_i=$((_gf_i + 1))
+        done
+        if [ "$GET_FORM_CANCELED" = "true" ]; then
+            return 1
+        fi
+    else
+        # === 非交互模式：逐行读取 ===
+        _gf_count=0
+        for _gf_def in "$@"; do
+            _gf_nf=$(printf '%s' "$_gf_def" | awk -F'::' '{print NF}')
+            _gf_prompt=$(printf '%s' "$_gf_def" | awk -F'::' '{print $1}')
+            if [ "$_gf_nf" = "3" ]; then
+                _gf_default=$(printf '%s' "$_gf_def" | awk -F'::' '{print $2}')
+                _gf_allow_empty=$(printf '%s' "$_gf_def" | awk -F'::' '{print $3}')
+            else
+                _gf_default=""
+                _gf_allow_empty=$(printf '%s' "$_gf_def" | awk -F'::' '{print $2}')
+            fi
+
+            printf "%b" "${COLOR_YELLOW}${_gf_prompt}${COLOR_RESET}"
+            if [ -n "$_gf_default" ]; then
+                printf " (%s)" "$_gf_default"
+            fi
+            printf "%b" "${COLOR_RESET}"
+            if ! read -r _gf_input; then
+                GET_FORM_CANCELED=true
+                return 1
+            fi
+            if [ "$_gf_allow_empty" = "true" ]; then
+                _gf_value="$_gf_input"
+            else
+                _gf_value="${_gf_input:-$_gf_default}"
+            fi
+            eval "GET_FORM_FIELD_${_gf_count}=\$_gf_value"
+            _gf_count=$((_gf_count + 1))
+        done
+        GET_FORM_FIELD_COUNT="$_gf_count"
+    fi
+    return 0
+}
+
 # === select_subscription ===
 # 选择订阅（列表选择）
 # 结果通过全局变量 SELECTED_SUB 返回
@@ -960,7 +1399,7 @@ select_subscription(){
         return 1
     fi
     # 显示选择菜单
-    menu_dispatch " 选择订阅 " "$@" "$menu_return"
+    menu_dispatch " 选择订阅 " "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
@@ -984,9 +1423,7 @@ logs_menu(){
             "$menu_logs_option2" \
             "$menu_logs_option3" \
             "$menu_logs_option4" \
-            "$menu_logs_option5" \
-            "$menu_return" \
-            "$menu_exit"
+            "$menu_logs_option5"
         case "$MENU_RESULT" in
             0) tui_clear; view_logs; pause_prompt;;
             1)
@@ -1016,8 +1453,7 @@ logs_menu(){
                     "$menu_logs_level_info" \
                     "$menu_logs_level_warning" \
                     "$menu_logs_level_error" \
-                    "$menu_logs_level_silent" \
-                    "$menu_return"
+                    "$menu_logs_level_silent"
                 case "$MENU_RESULT" in
                     0) grep -i "\[DEBUG\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
                     1) grep -i "\[INFO\]" "$_lm_file" 2>/dev/null | tail -50 || echo "$logs_empty_msg";;
@@ -1054,9 +1490,7 @@ backup_main() {
             "$menu_backup_option1" \
             "$menu_backup_option2" \
             "$menu_backup_option3" \
-            "$menu_backup_option4" \
-            "$menu_return" \
-            "$menu_exit"
+            "$menu_backup_option4"
         case "$MENU_RESULT" in
             0) tui_clear; backup_config; pause_prompt;;
             1) tui_clear; list_backups; pause_prompt;;
@@ -1075,9 +1509,7 @@ rules_main() {
         menu_dispatch "$menu_rules_title" \
             "$menu_rules_option1" \
             "$menu_rules_option2" \
-            "$menu_rules_option3" \
-            "$menu_return" \
-            "$menu_exit"
+            "$menu_rules_option3"
         case "$MENU_RESULT" in
             0) tui_clear; list_rules; pause_prompt;;
             1) tui_clear; rules_edit; pause_prompt;;
@@ -1096,9 +1528,7 @@ profiles_main() {
             "$menu_profiles_option1" \
             "$menu_profiles_option2" \
             "$menu_profiles_option3" \
-            "$menu_profiles_option4" \
-            "$menu_return" \
-            "$menu_exit"
+            "$menu_profiles_option4"
         case "$MENU_RESULT" in
             0) tui_clear; list_profiles; pause_prompt;;
             1) tui_clear; create_profile; pause_prompt;;
@@ -1116,9 +1546,7 @@ health_main() {
     while true; do
         menu_dispatch "$menu_health_title" \
             "$menu_health_option1" \
-            "$menu_health_option2" \
-            "$menu_return" \
-            "$menu_exit"
+            "$menu_health_option2"
         case "$MENU_RESULT" in
             0) tui_clear; health_check; pause_prompt;;
             1) tui_clear; toggle_auto_recovery; pause_prompt;;
@@ -1136,9 +1564,7 @@ tools(){
             "$menu_tools_option2" \
             "$menu_tools_option3" \
             "$menu_tools_option4" \
-            "$menu_tools_option5" \
-            "$menu_return" \
-            "$menu_exit"
+            "$menu_tools_option5"
         case "$MENU_RESULT" in
             0) logs_menu;;
             1) backup_main;;
@@ -1225,7 +1651,7 @@ ${_psg_item}"
 ${_psg_g}"
         fi
     done
-    menu_dispatch "$proxy_select_group_msg" "$@" "$menu_return"
+    menu_dispatch "$proxy_select_group_msg" "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
@@ -1328,7 +1754,7 @@ ${_pss_s}"
         fi
     done
     _pss_prompt=$(printf "$proxy_select_server_msg" "$_pss_group")
-    menu_dispatch "$_pss_prompt" "$@" "$menu_return"
+    menu_dispatch "$_pss_prompt" "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
@@ -1520,9 +1946,7 @@ menu() {
                 "$menu_service_option1" \
                 "$menu_service_option2" \
                 "$menu_service_option3" \
-                "$menu_service_option4" \
-                "$menu_return" \
-                "$menu_exit"
+                "$menu_service_option4"
             case "$MENU_RESULT" in
                 0) tui_clear; start; pause_prompt;;
                 1) tui_clear; stop; pause_prompt;;
@@ -1553,9 +1977,7 @@ menu() {
                 "$menu_install_option6" \
                 "$menu_install_option7" \
                 "$menu_install_option8" \
-                "$menu_install_option9" \
-                "$menu_return" \
-                "$menu_exit"
+                "$menu_install_option9"
             case "$MENU_RESULT" in
                 0)
                     get_input "$prompt_version_msg"
@@ -1598,9 +2020,7 @@ menu() {
                 "$menu_proxy_option1" \
                 "$menu_proxy_option2" \
                 "$menu_proxy_option3" \
-                "$menu_proxy_option4" \
-                "$menu_return" \
-                "$menu_exit"
+                "$menu_proxy_option4"
             case "$MENU_RESULT" in
                 0) tui_clear; proxy_select_server; pause_prompt;;
                 1) tui_clear; proxy_show_status; pause_prompt;;
@@ -1623,54 +2043,57 @@ menu() {
                 "$menu_subscription_option4" \
                 "$menu_subscription_option5" \
                 "$menu_subscription_option6" \
-                "$menu_subscription_option7" \
-                "$menu_return" \
-                "$menu_exit"
+                "$menu_subscription_option7"
             case "$MENU_RESULT" in
                 0)
-                    get_input "$prompt_subscription_name_msg"
-                    if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
-                    _var="$GET_INPUT_RESULT"
-                    if [ -z "$_var" ]; then
-                        warn "$validate_name_msg" false; pause_prompt; continue
+                    get_form "$form_add_sub_title" \
+                        "${prompt_subscription_name_msg}::false" \
+                        "${prompt_subscription_url_msg}::false" \
+                        "${prompt_subscription_update_msg}::0::true"
+                    if [ "$GET_FORM_CANCELED" = "true" ]; then continue; fi
+                    eval "_var=\"\$GET_FORM_FIELD_0\""
+                    eval "_sub_url=\"\$GET_FORM_FIELD_1\""
+                    eval "_interval=\"\$GET_FORM_FIELD_2\""
+                    if [ -z "$_var" ] || [ -z "$_sub_url" ]; then
+                        tui_clear; warn "$validate_name_msg" false; pause_prompt; continue
                     fi
-                    get_input "$prompt_subscription_url_msg"
-                    if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
-                    _sub_url="$GET_INPUT_RESULT"
-                    if [ -z "$_sub_url" ]; then
-                        warn "$validate_url_msg" false; pause_prompt; continue
-                    fi
-                    add "${_var}::${_sub_url}"
+                    [ -z "$_interval" ] && _interval="0"
+                    tui_clear; add "${_var}::${_sub_url}::${_interval}"
                     pause_prompt
                     ;;
                 1)
                     if select_subscription; then
                         _sub_name="$SELECTED_SUB"
-                        get_input "$prompt_subscription_url_msg"
-                        if [ "$GET_INPUT_CANCELED" = "true" ]; then pause_prompt; continue; fi
-                        _sub_url="$GET_INPUT_RESULT"
+                        _md_current_url=$(find_subscription_config "$_sub_name" 'url')
+                        _md_current_interval=$(find_subscription_config "$_sub_name" 'interval')
+                        get_form "$form_modify_sub_title" \
+                            "${prompt_subscription_url_msg}::${_md_current_url}::false" \
+                            "${prompt_subscription_update_msg}::${_md_current_interval}::true"
+                        if [ "$GET_FORM_CANCELED" = "true" ]; then tui_clear; pause_prompt; continue; fi
+                        eval "_sub_url=\"\$GET_FORM_FIELD_0\""
+                        eval "_interval=\"\$GET_FORM_FIELD_1\""
                         if [ -z "$_sub_url" ]; then
-                            warn "$validate_url_msg" false; pause_prompt; continue
+                            tui_clear; warn "$validate_url_msg" false; pause_prompt; continue
                         fi
-                        modify "$_sub_name" "$_sub_url"
+                        tui_clear; modify "$_sub_name" "$_sub_url" "$_interval"
                     fi
                     pause_prompt
                     ;;
                 2)
                     if select_subscription; then
-                        del "$SELECTED_SUB"
+                        tui_clear; del "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
-                3) list; pause_prompt;;
+                3) tui_clear; list; pause_prompt;;
                 4)
                     if select_subscription; then
-                        update_sub "$SELECTED_SUB"
+                        tui_clear; update_sub "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
-                5) auto_update_sub false; pause_prompt;;
-                6) auto_update_sub true; pause_prompt;;
+                5) tui_clear; auto_update_sub false; pause_prompt;;
+                6) tui_clear; auto_update_sub true; pause_prompt;;
                 BACK) break;;
                 QUIT) exit 0;;
                 INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
@@ -1692,54 +2115,57 @@ menu() {
                 "$menu_sub_config_option8" \
                 "$menu_sub_config_option9" \
                 "$menu_sub_config_option10" \
-                "$menu_sub_config_option11" \
-                "$menu_return" \
-                "$menu_exit"
+                "$menu_sub_config_option11"
             case "$MENU_RESULT" in
                 0) # Add subscription
-                    get_input "$prompt_subscription_name_msg"
-                    if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
-                    _var="$GET_INPUT_RESULT"
-                    if [ -z "$_var" ]; then
-                        warn "$validate_name_msg" false; pause_prompt; continue
+                    get_form "$form_add_sub_title" \
+                        "${prompt_subscription_name_msg}::false" \
+                        "${prompt_subscription_url_msg}::false" \
+                        "${prompt_subscription_update_msg}::0::true"
+                    if [ "$GET_FORM_CANCELED" = "true" ]; then continue; fi
+                    eval "_var=\"\$GET_FORM_FIELD_0\""
+                    eval "_sub_url=\"\$GET_FORM_FIELD_1\""
+                    eval "_interval=\"\$GET_FORM_FIELD_2\""
+                    if [ -z "$_var" ] || [ -z "$_sub_url" ]; then
+                        tui_clear; warn "$validate_name_msg" false; pause_prompt; continue
                     fi
-                    get_input "$prompt_subscription_url_msg"
-                    if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
-                    _sub_url="$GET_INPUT_RESULT"
-                    if [ -z "$_sub_url" ]; then
-                        warn "$validate_url_msg" false; pause_prompt; continue
-                    fi
-                    add "${_var}::${_sub_url}"
+                    [ -z "$_interval" ] && _interval="0"
+                    tui_clear; add "${_var}::${_sub_url}::${_interval}"
                     pause_prompt
                     ;;
                 1) # Modify subscription
                     if select_subscription; then
                         _sub_name="$SELECTED_SUB"
-                        get_input "$prompt_subscription_url_msg"
-                        if [ "$GET_INPUT_CANCELED" = "true" ]; then pause_prompt; continue; fi
-                        _sub_url="$GET_INPUT_RESULT"
+                        _md_current_url=$(find_subscription_config "$_sub_name" 'url')
+                        _md_current_interval=$(find_subscription_config "$_sub_name" 'interval')
+                        get_form "$form_modify_sub_title" \
+                            "${prompt_subscription_url_msg}::${_md_current_url}::false" \
+                            "${prompt_subscription_update_msg}::${_md_current_interval}::true"
+                        if [ "$GET_FORM_CANCELED" = "true" ]; then tui_clear; pause_prompt; continue; fi
+                        eval "_sub_url=\"\$GET_FORM_FIELD_0\""
+                        eval "_interval=\"\$GET_FORM_FIELD_1\""
                         if [ -z "$_sub_url" ]; then
-                            warn "$validate_url_msg" false; pause_prompt; continue
+                            tui_clear; warn "$validate_url_msg" false; pause_prompt; continue
                         fi
-                        modify "$_sub_name" "$_sub_url"
+                        tui_clear; modify "$_sub_name" "$_sub_url" "$_interval"
                     fi
                     pause_prompt
                     ;;
                 2) # Delete subscription
                     if select_subscription; then
-                        del "$SELECTED_SUB"
+                        tui_clear; del "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
-                3) list; pause_prompt;;
+                3) tui_clear; list; pause_prompt;;
                 4) # Update subscription
                     if select_subscription; then
-                        update_sub "$SELECTED_SUB"
+                        tui_clear; update_sub "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
-                5) auto_update_sub false; pause_prompt;;
-                6) auto_update_sub true; pause_prompt;;
+                5) tui_clear; auto_update_sub false; pause_prompt;;
+                6) tui_clear; auto_update_sub true; pause_prompt;;
                 7) tui_clear; config_view; pause_prompt;;
                 8) tui_clear; config_set; pause_prompt;;
                 9) tui_clear; config_del; pause_prompt;;
@@ -1801,8 +2227,7 @@ menu() {
             "$menu_main_option6" \
             "$menu_main_option7" \
             "$menu_main_option8" \
-            "$menu_main_option9" \
-            "$menu_exit"
+            "$menu_main_option9"
         case "$MENU_RESULT" in
             0) service_menu;;
             1) tui_clear; if is_auto_start; then auto_start false; else auto_start true; fi; pause_prompt;;
@@ -1895,6 +2320,8 @@ prompt_version_msg="Enter the version number (default is the latest version):"
 prompt_subscription_name_msg="Enter the subscription name:"
 prompt_subscription_url_msg="Enter the subscription URL:"
 prompt_subscription_update_msg="Enter the subscription auto-update interval (in hours):"
+form_add_sub_title=" Add Subscription "
+form_modify_sub_title=" Modify Subscription "
 not_root_execute_msg="Please run the script with sudo or as the root user."
 verify_failed_msg="Parameter can only be true, false, or ''. Default is true."
 unsupported_linux_distribution_failed_msg="Unsupported Linux distribution."
@@ -4289,11 +4716,12 @@ add(){
     fi
 }
 
-# 修改订阅 URL（保留原 interval，仅更新 URL 和下载内容）
-# 参数: $1 - 订阅名称, $2 - 新 URL
+# 修改订阅 URL 和可选的 interval
+# 参数: $1 - 订阅名称, $2 - 新 URL, $3 - 新更新间隔(可选,空则保持不变)
 modify() {
     _md_name="$1"
     _md_url="$2"
+    _md_interval="$3"
     # 校验订阅名称
     case "$_md_name" in
         *[..\\/:\*\?\<\>\|]*|"")
@@ -4309,6 +4737,15 @@ modify() {
         failed "$not_sub_exists_msg"
         return 1
     fi
+    # 校验 interval：必须为空或非负整数
+    if [ -n "$_md_interval" ]; then
+        case "$_md_interval" in
+            *[!0-9]*)
+                failed "$add_sub_parameter_failed_msg:${_md_interval}"
+                return 1
+                ;;
+        esac
+    fi
     # 判断 url 类型并下载/复制
     if [ "${_md_url#http}" != "$_md_url" ]; then
         check_url "$_md_url" || return 1
@@ -4321,8 +4758,13 @@ modify() {
         check_config "$_md_url" || return 1
         cp "$_md_url" "${subscription_dir}/${_md_name}.yaml"
     fi
-    # 仅更新 URL 配置，interval 保持不变
+    # 更新 URL 配置
     update_subscription_config "$_md_name" 'url' "$_md_url"
+    # 若提供了 interval 则更新，否则保持不变
+    if [ -n "$_md_interval" ]; then
+        update_subscription_config "$_md_name" 'interval' "$_md_interval"
+        auto_update_sub '' "$_md_name"
+    fi
     success "$update_sub_success_msg"
 }
 
@@ -5473,7 +5915,7 @@ select_backup(){
         return 1
     fi
     # 显示选择菜单
-    menu_dispatch "$backup_select_title" "$@" "$menu_return"
+    menu_dispatch "$backup_select_title" "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
@@ -5641,7 +6083,7 @@ select_profile(){
         return 1
     fi
     # 显示选择菜单
-    menu_dispatch "$profile_select_title" "$@" "$menu_return"
+    menu_dispatch "$profile_select_title" "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
@@ -6104,7 +6546,7 @@ select_config_key() {
         warn "$config_no_keys_msg" false
         return 1
     fi
-    menu_dispatch "$config_select_key_title" "$@" "$menu_return"
+    menu_dispatch "$config_select_key_title" "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
@@ -6220,7 +6662,7 @@ config_del() {
         warn "$config_no_keys_msg" false
         return 1
     fi
-    menu_dispatch "$config_del_prompt_msg" "$@" "$menu_return"
+    menu_dispatch "$config_del_prompt_msg" "$@"
     case "$MENU_RESULT" in
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)

@@ -114,9 +114,22 @@ if [ "$(id -u)" -eq 0 ]; then
 else
     _is_root_user=false
     _run_mode="user"
-    # 用户级安装到 ~/.local/clash，软链接到 ~/.local/bin/clashtool
-    install_dir="${CLASHTOOL_INSTALL_DIR:-${HOME}/.local/${service_name}}"
-    symlink_dir="${HOME}/.local/bin"
+    # 检测已安装路径：用户级优先，其次系统级（使普通用户也能检测/操作系统级安装）
+    _user_install_dir="${CLASHTOOL_INSTALL_DIR:-${HOME}/.local/${service_name}}"
+    _system_install_dir="/opt/${service_name}"
+    if [ -f "${_user_install_dir}/clash" ]; then
+        # 用户级已安装
+        install_dir="$_user_install_dir"
+        symlink_dir="${HOME}/.local/bin"
+    elif [ -f "${_system_install_dir}/clash" ]; then
+        # 系统级已安装：普通用户使用系统级路径（只读访问，写操作由 check_and_elevate 提权）
+        install_dir="$_system_install_dir"
+        symlink_dir="/usr/local/bin"
+    else
+        # 未安装：默认用户级路径（用于首次安装）
+        install_dir="$_user_install_dir"
+        symlink_dir="${HOME}/.local/bin"
+    fi
     mkdir -p "$symlink_dir" 2>/dev/null
     chmod 0700 "$symlink_dir" 2>/dev/null
     symlink_path="${symlink_dir}/${cmd_name}"
@@ -185,9 +198,48 @@ tool_config_path="${config_dir}/clashtool.ini"
 # Clash 基本配置键（仅支持简单键值对，复杂配置请使用编辑器直接修改）
 clash_config_keys="port socks-port redir-port tproxy-port mixed-port allow-lan bind-address mode log-level ipv6 unified-delay external-controller global-client-fingerprint external-ui secret interface-name routing-mark"
 
+# 重新检测安装路径（安装/卸载后刷新父进程的路径变量）
+# 复用初始化检测逻辑：普通用户场景下用户级优先，其次系统级
+# root 用户路径逻辑复杂且 install_dir 通常不变（/opt/clash），跳过
+detect_install_paths() {
+    if [ "$(id -u)" -eq 0 ]; then
+        return 0
+    fi
+    _dip_user_dir="${CLASHTOOL_INSTALL_DIR:-${HOME}/.local/${service_name}}"
+    _dip_system_dir="/opt/${service_name}"
+    if [ -f "${_dip_user_dir}/clash" ]; then
+        install_dir="$_dip_user_dir"
+        symlink_dir="${HOME}/.local/bin"
+    elif [ -f "${_dip_system_dir}/clash" ]; then
+        # 系统级已安装：普通用户使用系统级路径（写操作由 check_and_elevate 提权）
+        install_dir="$_dip_system_dir"
+        symlink_dir="/usr/local/bin"
+    else
+        # 未安装：默认用户级路径
+        install_dir="$_dip_user_dir"
+        symlink_dir="${HOME}/.local/bin"
+    fi
+    _is_root_user=false
+    _run_mode="user"
+    symlink_path="${symlink_dir}/${cmd_name}"
+    script_path="${install_dir}/clashtool.sh"
+    ui_install_dir="${install_dir}/ui"
+    log_dir="${install_dir}/logs"
+    config_dir="${install_dir}/config"
+    subscription_dir="${config_dir}/subscription"
+    subscription_backup_dir="${subscription_dir}/backup"
+    clash_binary_path="${install_dir}/clash"
+    yq_binary_path="${install_dir}/yq"
+    main_config_path="${config_dir}/config.yaml"
+    user_config_path="${config_dir}/user.yaml"
+    gateway_config_path="${config_dir}/gateway.yaml"
+    tool_config_path="${config_dir}/clashtool.ini"
+}
+
 # ==================== 运行状态 ====================
-# 刷新Clash运行状态（重新检测进程）
+# 刷新Clash运行状态（先重新检测安装路径，再检测进程）
 refresh_status() {
+    detect_install_paths
     # 方法1: pgrep 匹配完整路径（排除自身脚本进程）
     clash_pid=$(pgrep -f "$clash_binary_path" 2>/dev/null | grep -v "^$$\$" | head -1)
     # 方法2: 如果方法1失败，精确匹配二进制进程名
@@ -211,6 +263,32 @@ refresh_status() {
 # 检查Clash是否正在运行
 clash_is_running=false
 refresh_status
+
+# 检查 Clash 是否已安装（未安装时提示并返回 1）
+# 用于 TUI 菜单操作前的状态门禁
+require_installed() {
+    if [ ! -f "$clash_binary_path" ]; then
+        tui_clear
+        warn "$action_not_installed_msg" false
+        pause_prompt
+        return 1
+    fi
+    return 0
+}
+
+# 检查 Clash 是否正在运行（未运行时提示并返回 1）
+# 用于 TUI 菜单操作前的状态门禁
+require_running() {
+    refresh_status
+    if ! $clash_is_running; then
+        tui_clear
+        warn "$action_not_running_msg" false
+        pause_prompt
+        return 1
+    fi
+    return 0
+}
+
 # ==================== UI Format Configuration ====================
 # ANSI color codes
 # 使用真实 ESC 字符（而非字面量 \033），确保 printf "%s" 和 "%b" 均能正确渲染颜色。
@@ -328,6 +406,12 @@ tui_unavailable_msg="TUI mode unavailable. Missing dependencies or non-interacti
 tui_use_cli_hint_msg="Please install required dependencies or use command line mode:"
 tui_form_nav_hint="[Tab/Down] Next  [Up] Prev  [Enter] Submit  [Esc] Cancel"
 tui_form_field_required_msg="%s cannot be empty"
+tui_menu_nav_hint="  [Up/Down] Navigate  [Enter] Select  [Esc] Back  [Ctrl+C] Exit"
+tui_status_running_msg=" [RUNNING] Clash PID: %s"
+tui_status_stopped_msg=" [STOPPED] Clash not running"
+tui_status_not_installed_msg=" [NOT INSTALLED] Clash not installed"
+action_not_installed_msg="Clash is not installed. Please install it first."
+action_not_running_msg="Clash is not running. Please start it first."
 
 # === TUI detection and rendering ===
 # ==================== TUI 基础组件 ====================
@@ -461,6 +545,21 @@ str_display_width() {
     '
 }
 
+# 取字符串末尾指定显示宽度的子串（ASCII 精确，多字节按字符数近似）
+# 用于输入超长时水平滚动显示末尾内容
+# $1=字符串, $2=最大显示宽度
+str_tail_by_width() {
+    _stw_str="$1"
+    _stw_maxw="$2"
+    _stw_len=${#_stw_str}
+    if [ "$_stw_len" -le "$_stw_maxw" ]; then
+        printf '%s' "$_stw_str"
+        return 0
+    fi
+    _stw_offset=$((_stw_len - _stw_maxw + 1))
+    printf '%s' "$_stw_str" | awk -v o="$_stw_offset" -v l="$_stw_maxw" '{print substr($0, o, l)}'
+}
+
 tui_draw_menu() {
     _tdm_title="$1"
     _tdm_selected="$2"
@@ -533,16 +632,17 @@ tui_draw_menu() {
         _tdm_i=$((_tdm_i + 1))
     done
 
-    # 按键提示栏（原运行状态栏，现改为按键操作提示）
+    # 状态栏：运行/安装状态 + 按键提示（两行）
     printf "%b" "${COLOR_CYAN}"
     printf "%s\033[K\n" "$MENU_BORDER_MID"
-    # 使用缓存的提示文本和宽度（由 tui_menu_select 预计算），避免每次渲染 fork 子进程
+
+    # 第一行：运行/安装状态（使用 tui_menu_select 预计算的缓存）
     if [ -n "$_TMS_STATUS_TEXT" ]; then
         _tdm_status="$_TMS_STATUS_TEXT"
         _sw="$_TMS_STATUS_W"
     else
-        _tdm_status="$tui_menu_nav_hint"
-        _sw=$(str_display_width "$_tdm_status")
+        _tdm_status=""
+        _sw=0
     fi
     printf "%b" "${COLOR_DIM}"
     printf "%s%s" "$MENU_LINE" "$_tdm_status"
@@ -550,6 +650,24 @@ tui_draw_menu() {
     [ "$_spad" -lt 0 ] && _spad=0
     printf "%${_spad}s" ""
     printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+
+    # 第二行：按键操作提示（使用 tui_menu_select 预计算的缓存）
+    if [ -n "$_TMS_HINT_TEXT" ]; then
+        _tdm_hint="$_TMS_HINT_TEXT"
+        _hw="$_TMS_HINT_W"
+    else
+        _tdm_hint="$tui_menu_nav_hint"
+        _hw=$(str_display_width "$_tdm_hint")
+    fi
+    printf "%b" "${COLOR_DIM}"
+    printf "%s%s" "$MENU_LINE" "$_tdm_hint"
+    _hpad=$(( MENU_CONTENT_WIDTH - _hw ))
+    [ "$_hpad" -lt 0 ] && _hpad=0
+    printf "%${_hpad}s" ""
+    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+
+    # 底部边框（青色，与其他边框一致）
+    printf "%b" "${COLOR_CYAN}"
     printf "%s\033[K\n" "$MENU_BORDER_BOT"
     printf "%b" "${COLOR_RESET}"
 
@@ -671,11 +789,23 @@ tui_menu_select() {
     _TMS_W_COUNT="$_tms_widx"
     _TMS_TITLE_W=$(str_display_width "$_tms_title")
 
-    # === 状态栏改为按键提示（原运行状态信息已移除，由按键提示替代） ===
-    # refresh_status 仍保留以刷新 clash_is_running 等状态（主菜单标签依赖）
+    # === 状态栏：运行/安装状态 + 按键提示（两行）===
+    # refresh_status 刷新 clash_is_running/clash_pid（主菜单标签和状态栏都依赖）
     refresh_status
-    _TMS_STATUS_TEXT="$tui_menu_nav_hint"
+    # 预计算运行/安装状态文本（避免每次渲染 fork 子进程）
+    if [ -f "$clash_binary_path" ]; then
+        if $clash_is_running; then
+            _TMS_STATUS_TEXT=$(printf "$tui_status_running_msg" "${clash_pid:-N/A}")
+        else
+            _TMS_STATUS_TEXT="$tui_status_stopped_msg"
+        fi
+    else
+        _TMS_STATUS_TEXT="$tui_status_not_installed_msg"
+    fi
     _TMS_STATUS_W=$(str_display_width "$_TMS_STATUS_TEXT")
+    # 预计算按键提示文本
+    _TMS_HINT_TEXT="$tui_menu_nav_hint"
+    _TMS_HINT_W=$(str_display_width "$_TMS_HINT_TEXT")
 
     # 进入菜单前清屏一次，清除之前命令输出的残留
     printf "\033[2J"
@@ -743,7 +873,7 @@ tui_menu_select() {
         unset "_TMS_W_${_tms_widx}" 2>/dev/null
         _tms_widx=$((_tms_widx + 1))
     done
-    unset _TMS_W_COUNT _TMS_TITLE_W _TMS_STATUS_TEXT _TMS_STATUS_W 2>/dev/null
+    unset _TMS_W_COUNT _TMS_TITLE_W _TMS_STATUS_TEXT _TMS_STATUS_W _TMS_HINT_TEXT _TMS_HINT_W 2>/dev/null
 
     # 恢复终端状态（明确操作 /dev/tty）
     stty "$_tms_old_tty" </dev/tty 2>/dev/null
@@ -768,7 +898,7 @@ tui_confirm() {
         fi
         # 清屏并定位到左上角（避免旧菜单内容残留）
         printf "\033[2J\033[H"
-        printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_TOP}${COLOR_RESET}\033[K"
+        printf "%b\n" "${COLOR_CYAN}${COLOR_BOLD}${MENU_BORDER_TOP}${COLOR_RESET}\033[K"
         printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
         _mw=$(str_display_width "$_tc_msg")
         _mp=$(( MENU_CONTENT_WIDTH - _mw ))
@@ -809,7 +939,7 @@ tui_input() {
 
     # 清屏并定位到左上角（避免旧菜单内容残留），每行末尾用 \033[K 清除残留
     printf "\033[2J\033[H"
-    printf "%b\n" "${COLOR_CYAN}${MENU_BORDER_TOP}${COLOR_RESET}\033[K"
+    printf "%b\n" "${COLOR_CYAN}${COLOR_BOLD}${MENU_BORDER_TOP}${COLOR_RESET}\033[K"
     # 提示：ESC 取消输入，允许空输入时显示 Enter 跳过
     printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
     if [ "$_ti_allow_empty" = "true" ]; then
@@ -845,8 +975,16 @@ tui_input() {
     # onlcr: 确保输出 \n 时翻译为 CR-NL，光标正确回到行首
     stty -echo -icanon -icrnl onlcr min 1 time 0 </dev/tty 2>/dev/null
     _ti_arrow=$(tui_get_arrow)
-    printf "%b%s%b" "${COLOR_CYAN}" "${_ti_arrow} " "${COLOR_RESET}"
+    # 获取终端宽度，计算输入可用宽度（用于水平滚动显示末尾内容）
+    _ti_cols=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+    [ -z "$_ti_cols" ] && _ti_cols=80
+    _ti_prefix_w=$(( $(str_display_width "$_ti_arrow") + 1 ))
+    _ti_avail=$((_ti_cols - _ti_prefix_w))
+    [ "$_ti_avail" -lt 10 ] && _ti_avail=10
     _ti_buf=""
+    # 初始重绘（空输入）：回到行首清除行，重绘箭头+可见文本
+    _ti_visible=$(str_tail_by_width "$_ti_buf" "$_ti_avail")
+    printf "\r\033[K%b%s %b%s" "${COLOR_CYAN}" "$_ti_arrow" "${COLOR_RESET}" "$_ti_visible"
 
     while true; do
         _ti_ch=$(dd bs=1 count=1 2>/dev/null </dev/tty)
@@ -885,7 +1023,8 @@ tui_input() {
             8|127)
                 if [ -n "$_ti_buf" ]; then
                     _ti_buf=$(printf '%s' "$_ti_buf" | sed 's/.$//')
-                    printf '\b \b'
+                    _ti_visible=$(str_tail_by_width "$_ti_buf" "$_ti_avail")
+                    printf "\r\033[K%b%s %b%s" "${COLOR_CYAN}" "$_ti_arrow" "${COLOR_RESET}" "$_ti_visible"
                 fi
                 continue
                 ;;
@@ -893,7 +1032,8 @@ tui_input() {
 
         if [ "$_ti_ch_val" -ge 32 ] 2>/dev/null; then
             _ti_buf="${_ti_buf}${_ti_ch}"
-            printf '%s' "$_ti_ch"
+            _ti_visible=$(str_tail_by_width "$_ti_buf" "$_ti_avail")
+            printf "\r\033[K%b%s %b%s" "${COLOR_CYAN}" "$_ti_arrow" "${COLOR_RESET}" "$_ti_visible"
         fi
     done
 
@@ -958,6 +1098,16 @@ _tf_draw_form() {
         eval "_tfd_value=\"\$_tf_value_${_tfd_i}\""
         _tfd_pw=$(str_display_width "$_tfd_prompt")
         _tfd_vw=$(str_display_width "$_tfd_value")
+        # 计算值可用宽度，超出时截取末尾显示（水平滚动）
+        _tfd_val_avail=$(( MENU_CONTENT_WIDTH - _tfd_prefix_w - _tfd_pw - 1 ))
+        [ "$_tfd_val_avail" -lt 5 ] && _tfd_val_avail=5
+        if [ "$_tfd_vw" -gt "$_tfd_val_avail" ]; then
+            _tfd_display_value=$(str_tail_by_width "$_tfd_value" "$_tfd_val_avail")
+            _tfd_display_w="$_tfd_val_avail"
+        else
+            _tfd_display_value="$_tfd_value"
+            _tfd_display_w="$_tfd_vw"
+        fi
 
         printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
 
@@ -971,18 +1121,18 @@ _tf_draw_form() {
             printf "\033[%dG" "$_tfd_text_col"
             printf "%b%s" "${COLOR_BOLD}${COLOR_WHITE}" "$_tfd_prompt"
             printf " "
-            printf "%b%s%b" "${COLOR_BOLD}${COLOR_CYAN}" "$_tfd_value" "${COLOR_RESET}"
+            printf "%b%s%b" "${COLOR_BOLD}${COLOR_CYAN}" "$_tfd_display_value" "${COLOR_RESET}"
             _tfd_active_pw="$_tfd_pw"
-            _tfd_active_vw="$_tfd_vw"
+            _tfd_active_vw="$_tfd_display_w"
         else
             # 非活动字段：等宽空格前缀（与活动箭头前缀同宽）+ 普通色（白色标签 + 青色数据）
             printf "%s" "$_tfd_inactive_prefix"
             printf "%b%s%b " "${COLOR_WHITE}" "$_tfd_prompt" "${COLOR_RESET}"
-            printf "%b%s%b" "${COLOR_CYAN}" "$_tfd_value" "${COLOR_RESET}"
+            printf "%b%s%b" "${COLOR_CYAN}" "$_tfd_display_value" "${COLOR_RESET}"
         fi
 
-        # 填充到右边界（prefix + prompt + 1空格 + value）
-        _tfd_content_w=$(( _tfd_prefix_w + _tfd_pw + 1 + _tfd_vw ))
+        # 填充到右边界（prefix + prompt + 1空格 + display_value）
+        _tfd_content_w=$(( _tfd_prefix_w + _tfd_pw + 1 + _tfd_display_w ))
         _tfd_pad=$(( MENU_CONTENT_WIDTH - _tfd_content_w ))
         [ "$_tfd_pad" -lt 0 ] && _tfd_pad=0
         printf "%${_tfd_pad}s" ""
@@ -1009,7 +1159,8 @@ _tf_draw_form() {
     printf "%${_tfd_spad}s" ""
     printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
 
-    # === 底部边框 ===
+    # === 底部边框（青色，与其他边框一致）===
+    printf "%b" "${COLOR_CYAN}"
     printf "%s\033[K\n" "$MENU_BORDER_BOT"
     printf "%b" "${COLOR_RESET}"
     printf "\033[J"
@@ -1566,11 +1717,11 @@ tools(){
             "$menu_tools_option4" \
             "$menu_tools_option5"
         case "$MENU_RESULT" in
-            0) logs_menu;;
+            0) require_running || continue; logs_menu;;
             1) backup_main;;
             2) rules_main;;
             3) profiles_main;;
-            4) health_main;;
+            4) require_running || continue; health_main;;
             BACK) break;;
             QUIT) exit 0;;
             INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
@@ -1949,9 +2100,10 @@ menu() {
                 "$menu_service_option4"
             case "$MENU_RESULT" in
                 0) tui_clear; start; pause_prompt;;
-                1) tui_clear; stop; pause_prompt;;
+                1) require_running || continue; tui_clear; stop; pause_prompt;;
                 2) tui_clear; restart; pause_prompt;;
                 3)
+                    require_running || continue
                     tui_clear
                     if select_subscription; then
                         reload "$SELECTED_SUB"
@@ -1977,35 +2129,47 @@ menu() {
                 "$menu_install_option6" \
                 "$menu_install_option7" \
                 "$menu_install_option8" \
-                "$menu_install_option9"
+                "$menu_install_option9" \
+                "$menu_install_option10" \
+                "$menu_install_option11"
             case "$MENU_RESULT" in
-                0)
+                0)  # 完整安装 - 核心+默认UI（一键最新版）
+                    _tui_pick_mode_flag || continue
+                    "$SCRIPT_PATH" install $_TUI_MODE_FLAG; pause_prompt
+                    ;;
+                1)  # 安装核心（可指定版本，空=最新）
+                    _tui_pick_mode_flag || continue
                     get_input "$prompt_version_msg"
                     if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
-                    if [ -z "$GET_INPUT_RESULT" ]; then warn "$validate_required_msg" "version" false; pause_prompt; continue; fi
-                    "$SCRIPT_PATH" install "$GET_INPUT_RESULT"; pause_prompt
+                    "$SCRIPT_PATH" install core "$GET_INPUT_RESULT" $_TUI_MODE_FLAG; pause_prompt
                     ;;
-                1)
+                2)  # 更新核心（可指定版本，空=最新）
                     get_input "$prompt_version_msg"
                     if [ "$GET_INPUT_CANCELED" = "true" ]; then continue; fi
-                    if [ -z "$GET_INPUT_RESULT" ]; then warn "$validate_required_msg" "version" false; pause_prompt; continue; fi
-                    "$SCRIPT_PATH" update "$GET_INPUT_RESULT"; pause_prompt
+                    "$SCRIPT_PATH" update core "$GET_INPUT_RESULT"; pause_prompt
                     ;;
-                2) "$SCRIPT_PATH" uninstall; pause_prompt;;
-                3) "$SCRIPT_PATH" uninstall all; pause_prompt;;
-                4|5|6)
+                3|4|5)  # 安装/切换 UI（yacd/dashboard/zashboard）
                     _ui="yacd"
-                    [ "$MENU_RESULT" = "5" ] && _ui="dashboard"
-                    [ "$MENU_RESULT" = "6" ] && _ui="zashboard"
-                    if [ -d "$ui_install_dir" ];then
-                        "$SCRIPT_PATH" update_ui "$_ui"
+                    [ "$MENU_RESULT" = "4" ] && _ui="dashboard"
+                    [ "$MENU_RESULT" = "5" ] && _ui="zashboard"
+                    if is_ui_installed; then
+                        "$SCRIPT_PATH" update ui "$_ui"
                     else
-                        "$SCRIPT_PATH" install_ui "$_ui"
+                        # UI 安装位置跟随核心，无需选择安装级别
+                        "$SCRIPT_PATH" install ui "$_ui"
                     fi
                     pause_prompt
                     ;;
-                7) "$SCRIPT_PATH" update_ui; pause_prompt;;
-                8) "$SCRIPT_PATH" uninstall_ui; pause_prompt;;
+                6)  # 更新当前UI
+                    "$SCRIPT_PATH" update ui; pause_prompt;;
+                7)  # 卸载核心
+                    "$SCRIPT_PATH" uninstall core; pause_prompt;;
+                8)  # 卸载UI
+                    "$SCRIPT_PATH" uninstall ui; pause_prompt;;
+                9)  # 完全卸载 - 核心+UI（保留配置）
+                    "$SCRIPT_PATH" uninstall; pause_prompt;;
+                10) # 完全卸载含配置 - 核心+UI+配置
+                    "$SCRIPT_PATH" uninstall all; pause_prompt;;
                 BACK) break;;
                 QUIT) exit 0;;
                 INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
@@ -2229,21 +2393,22 @@ menu() {
             "$menu_main_option8" \
             "$menu_main_option9"
         case "$MENU_RESULT" in
-            0) service_menu;;
-            1) tui_clear; if is_auto_start; then auto_start false; else auto_start true; fi; pause_prompt;;
+            0) require_installed || continue; service_menu;;
+            1) require_installed || continue; tui_clear; if is_auto_start; then auto_start false; else auto_start true; fi; pause_prompt;;
             2) 
+                require_installed || continue
                 if is_root; then
                     tui_clear; if is_gateway; then gateway false; else gateway true; fi; pause_prompt
                 else
                     tui_clear; permission_denied_msg "gateway"; printf "\n"; pause_prompt
                 fi
                 ;;
-            3) tui_clear; if is_proxy; then proxy_off; else proxy_on; fi; pause_prompt;;
-            4) sub_config_menu;;
-            5) proxy_menu;;
+            3) require_installed || continue; tui_clear; if is_proxy; then proxy_off; else proxy_on; fi; pause_prompt;;
+            4) require_installed || continue; sub_config_menu;;
+            5) require_installed || continue; require_running || continue; proxy_menu;;
             6) install_menu;;
-            7) tools;;
-            8) tui_clear; status; pause_prompt;;
+            7) require_installed || continue; tools;;
+            8) require_installed || continue; tui_clear; status; pause_prompt;;
             9) update_check; pause_prompt;;
             QUIT) break;;
             INVALID|*)
@@ -2334,6 +2499,7 @@ install_success_msg="Installation successful"
 install_failed_msg="Installation failed"
 uninstall_start_msg="Starting uninstallation"
 uninstall_success_msg="Uninstallation successful"
+uninstall_failed_msg="Failed to uninstall: %s"
 uninstall_purge_success_msg="Uninstallation successful (config purged)"
 uninstall_all_success_msg="Full uninstallation successful (core + UI + configs)"
 require_check_msg="Checking for dependencies"
@@ -2683,6 +2849,8 @@ install_mode_root_msg="System-level install (%s) - root required"
 install_mode_choice_msg="Choose [1/2] (default 1): "
 install_mode_user_selected_msg="Selected: user-level install"
 install_mode_root_selected_msg="Selected: system-level install, elevating..."
+install_mode_title=" Select Install Level "
+install_mode_required_msg="Command-line install requires a level: use --user or --root, or run clashtool.sh to choose in TUI"
 
 # 检测系统语言，返回语言代码（如 zh_CN / en / zh_TW）
 # 检测优先级：language 变量 > use_chinese 变量 > LANG 环境变量
@@ -2807,7 +2975,7 @@ update_ini() {
             print "[" section "]"
             print key "=" value
         }
-    }' "$file" > "$temp_file" && mv "$temp_file" "$file"
+    }' "$file" > "$temp_file" && cat "$temp_file" > "$file" && rm -f "$temp_file"
 }
 # 参数：
 #   $1: section - 指定节
@@ -2831,7 +2999,7 @@ delete_ini_section() {
         if ($0 == "[" section "]") in_section = 1
     }
     !in_section { print }
-    ' "$file" > "$temp_file" && mv "$temp_file" "$file"
+    ' "$file" > "$temp_file" && cat "$temp_file" > "$file" && rm -f "$temp_file"
 }
 
 # 参数：
@@ -4027,22 +4195,53 @@ _install_piped_full() {
 # 安装模式选择
 # 返回: 0=用户级安装, 1=系统级安装
 prompt_install_mode() {
-    # 确定用户级安装的目标路径
-    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
-        _pim_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
-        [ -z "$_pim_home" ] && _pim_home="/home/$SUDO_USER"
-    else
-        _pim_home="$HOME"
+    # 1) 命令行参数已指定级别（--user/--root）
+    if [ -n "$_cli_install_mode" ]; then
+        [ "$_cli_install_mode" = "user" ] && return 0
+        return 1
     fi
-    printf "%b\n" "${COLOR_CYAN}${install_mode_prompt_msg}${COLOR_RESET}"
-    printf "%b\n" "  [1] $(printf "$install_mode_user_msg" "${_pim_home}/.local/${service_name}")"
-    printf "%b\n" "  [2] $(printf "$install_mode_root_msg" "/opt/${service_name}")"
-    printf "%b" "${COLOR_CYAN}${install_mode_choice_msg}${COLOR_RESET}"
-    # 管道安装时 stdin 被 curl 占用，从 /dev/tty 读取
-    read _pim_choice </dev/tty 2>/dev/null || _pim_choice=""
-    case "$_pim_choice" in
-        2) return 1 ;;
-        *) return 0 ;;
+    # 2) 管道安装模式：从 /dev/tty 读取（stdin 被 curl 占用，无 TUI 能力）
+    if [ "$_is_piped_install" = "true" ]; then
+        # 确定用户级安装的目标路径
+        if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+            _pim_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+            [ -z "$_pim_home" ] && _pim_home="/home/$SUDO_USER"
+        else
+            _pim_home="$HOME"
+        fi
+        printf "%b\n" "${COLOR_CYAN}${install_mode_prompt_msg}${COLOR_RESET}"
+        printf "%b\n" "  [1] $(printf "$install_mode_user_msg" "${_pim_home}/.local/${service_name}")"
+        printf "%b\n" "  [2] $(printf "$install_mode_root_msg" "/opt/${service_name}")"
+        printf "%b" "${COLOR_CYAN}${install_mode_choice_msg}${COLOR_RESET}"
+        read _pim_choice </dev/tty 2>/dev/null || _pim_choice=""
+        case "$_pim_choice" in
+            2) return 1 ;;
+            *) return 0 ;;
+        esac
+    fi
+    # 3) 命令行未指定级别：报错（failed 交互模式不 exit，返回 2）
+    failed "$install_mode_required_msg" false
+    return 2
+}
+
+# TUI 模式下选择安装级别（用户级/系统级）
+# 返回：0=已选择（_TUI_MODE_FLAG 已设置），1=用户取消
+# 设置全局变量：_TUI_MODE_FLAG（--user 或 --root）
+_tui_pick_mode_flag() {
+    # 确定用户级安装的目标路径（root+sudo 用 SUDO_USER 的家目录）
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        _tpm_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
+        [ -z "$_tpm_home" ] && _tpm_home="/home/$SUDO_USER"
+    else
+        _tpm_home="$HOME"
+    fi
+    menu_dispatch "$install_mode_title" \
+        "$(printf "$install_mode_user_msg" "${_tpm_home}/.local/${service_name}")" \
+        "$(printf "$install_mode_root_msg" "/opt/${service_name}")"
+    case "$MENU_RESULT" in
+        0) _TUI_MODE_FLAG="--user"; return 0 ;;
+        1) _TUI_MODE_FLAG="--root"; return 0 ;;
+        *) _TUI_MODE_FLAG=""; return 1 ;;
     esac
 }
 
@@ -4167,6 +4366,18 @@ uninstall() {
             _un_clear_mode=""
             ;;
     esac
+    # 安装状态检查：
+    # - all 模式用于完全清理，只要 install_dir 存在即允许（核心可能已卸载但 UI/配置残留）
+    # - 其他模式（core/purge/默认）要求核心二进制存在，否则报错退出
+    if [ "$_un_arg" = "all" ]; then
+        if [ ! -e "$install_dir" ]; then
+            failed "Clash $not_install_msg"
+            return 1
+        fi
+    elif [ ! -f "$clash_binary_path" ]; then
+        failed "Clash $not_install_msg"
+        return 1
+    fi
     # 开始卸载clash
     normal "$uninstall_start_msg Clash"
     # 刷新运行状态
@@ -4188,16 +4399,23 @@ uninstall() {
 
     # 删除符号链接
     if [ -L "$symlink_path" ] || [ -f "$symlink_path" ]; then
-        rm -f "$symlink_path"
-        normal "$(printf "$symlink_removed_msg" "$symlink_path")"
+        if rm -f "$symlink_path"; then
+            normal "$(printf "$symlink_removed_msg" "$symlink_path")"
+        else
+            failed "$(printf "$uninstall_failed_msg" "$symlink_path")" false
+            return 1
+        fi
     fi
 
     # 清理 PATH 配置（可选：从 shell rc 中移除）
     # 不主动清理 shell rc，避免影响其他配置
 
     # 删除clash文件
-    rm -rf "$clash_binary_path"
-    clear "$_un_clear_mode"
+    if ! rm -rf "$clash_binary_path"; then
+        failed "$(printf "$uninstall_failed_msg" "$clash_binary_path")" false
+        return 1
+    fi
+    clear "$_un_clear_mode" || return 1
     if [ "$_un_arg" = "all" ]; then
         success "Clash $uninstall_all_success_msg"
     elif [ "$_un_clear_mode" = "all" ]; then
@@ -4274,7 +4492,10 @@ uninstall_ui(){
     fi
     normal "$uninstall_start_msg ClashUI"
     # 删除当前已安装UI
-    rm -rf "${ui_install_dir}"
+    if ! rm -rf "${ui_install_dir}"; then
+        failed "$(printf "$uninstall_failed_msg" "${ui_install_dir}")" false
+        return 1
+    fi
     update_clashtool_config 'ui' 'dashboard'
     # 设置ui配置
     delete_user_config 'external-ui'
@@ -6224,6 +6445,28 @@ requires_root() {
             return 1
             ;;
     esac
+    # 其他操作（install/uninstall/update 等）：基于安装路径可写性判断
+    # install_dir 存在但不可写（如 /opt/clash）→ 需要 root
+    if [ -e "$install_dir" ] && [ ! -w "$install_dir" ]; then
+        return 0
+    fi
+    # symlink_dir 存在但不可写（如 /usr/local/bin）→ 需要 root
+    if [ -n "$symlink_dir" ] && [ -e "$symlink_dir" ] && [ ! -w "$symlink_dir" ]; then
+        return 0
+    fi
+    # 写配置的操作（install/uninstall/update）：install_dir 可写不代表其下 config_dir/clashtool.ini 可写。
+    # 如 sudo 装到用户级目录，目录属主是普通用户但其中文件是 root 拥有，
+    # 此时 update_clashtool_config 写 clashtool.ini 会 Permission denied。
+    case "$1" in
+        "install"|"uninstall"|"update")
+            if [ -e "$config_dir" ] && [ ! -w "$config_dir" ]; then
+                return 0
+            fi
+            if [ -f "$tool_config_path" ] && [ ! -w "$tool_config_path" ]; then
+                return 0
+            fi
+            ;;
+    esac
     return 1
 }
 
@@ -6869,7 +7112,7 @@ _dispatch_group() {
     # Check if Clash is installed for most commands
     _dg_need_install=true
     case "$_dg_group/$_dg_sub" in
-        install/|install/core|install/ui|uninstall/|uninstall/core|uninstall/ui|update/script|tools/symlink|system/check|proxy/on|proxy/off) _dg_need_install=false ;;
+        install/|install/core|install/ui|uninstall/|uninstall/all|uninstall/core|uninstall/ui|update/script|tools/symlink|system/check|proxy/on|proxy/off) _dg_need_install=false ;;
     esac
     if [ "$_dg_need_install" = "true" ] && [ ! -f "$clash_binary_path" ]; then
         failed "$not_install_msg"
@@ -6943,8 +7186,10 @@ _dispatch_group() {
     install)
         # install 无子命令时默认安装核心+UI
         if [ -z "$_dg_sub" ]; then
-            # 不管什么权限都询问安装模式
-            if prompt_install_mode; then
+            prompt_install_mode
+            _pim_ret=$?
+            if [ "$_pim_ret" = "2" ]; then return 1; fi
+            if [ "$_pim_ret" = "0" ]; then
                 # 用户级安装
                 set_install_paths "user"
                 install "$_dg_arg" || return 1
@@ -6955,6 +7200,7 @@ _dispatch_group() {
                 fi
             else
                 # 系统级安装
+                [ -z "$_cli_mode_flag" ] && _cli_mode_flag="--root"
                 if is_root; then
                     set_install_paths "root"
                     install "$_dg_arg" || return 1
@@ -6966,38 +7212,42 @@ _dispatch_group() {
                 else
                     # 非 root 用户需要提权
                     normal "$install_mode_root_selected_msg"
-                    check_and_elevate "$_dg_group" "all" "$_dg_arg"
+                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg" $_cli_mode_flag
                 fi
             fi
             return 0
         fi
         case "$_dg_sub" in
             core)
-                if prompt_install_mode; then
+                prompt_install_mode
+                _pim_ret=$?
+                if [ "$_pim_ret" = "2" ]; then return 1; fi
+                if [ "$_pim_ret" = "0" ]; then
                     set_install_paths "user"
                     install "$_dg_arg"
                 else
+                    [ -z "$_cli_mode_flag" ] && _cli_mode_flag="--root"
                     if is_root; then
                         set_install_paths "root"
                         install "$_dg_arg"
                     else
                         normal "$install_mode_root_selected_msg"
-                        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
+                        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg" $_cli_mode_flag
                     fi
                 fi
                 ;;
             ui)
-                if prompt_install_mode; then
-                    set_install_paths "user"
+                # UI 安装位置跟随核心：核心必须已安装，install_dir 已是核心所在目录
+                if [ ! -f "$clash_binary_path" ]; then
+                    failed "$ui_install_requires_core_msg"
+                    return 1
+                fi
+                # 基于核心所在目录的可写性判断是否提权
+                # （用户级核心→用户级UI，系统级核心→系统级UI，无需用户指定级别）
+                if is_root || ! requires_root "install"; then
                     install_ui "$_dg_arg"
                 else
-                    if is_root; then
-                        set_install_paths "root"
-                        install_ui "$_dg_arg"
-                    else
-                        normal "$install_mode_root_selected_msg"
-                        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                    fi
+                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
                 fi
                 ;;
             *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "install" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
@@ -7016,7 +7266,8 @@ _dispatch_group() {
                 fi
             else
                 # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                check_and_elevate "$_dg_group" "all" "$_dg_arg"
+                # 保持原子命令（空），提权后走同样的 uninstall "" + uninstall_ui "" 流程（保留配置）
+                check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
             fi
             return 0
         fi
@@ -7029,7 +7280,7 @@ _dispatch_group() {
                     uninstall "all"
                 else
                     # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "all" "$_dg_arg"
+                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
                 fi
                 ;;
             core)
@@ -7160,6 +7411,16 @@ _dispatch_group() {
 main() {
     fun=$1
     var=$2
+    _arg3=$3
+    # 解析安装级别标志 --user/--root（约定作末尾参数，可出现在 $2/$3/$4 位置）
+    _cli_install_mode=""
+    case "$var" in --user) _cli_install_mode="user"; var="";; --root) _cli_install_mode="root"; var="";; esac
+    case "$_arg3" in --user) _cli_install_mode="user"; _arg3="";; --root) _cli_install_mode="root"; _arg3="";; esac
+    case "$4" in --user) _cli_install_mode="user";; --root) _cli_install_mode="root";; esac
+    # 派生标志字符串（供 check_and_elevate 透传给提权进程）
+    _cli_mode_flag=""
+    [ "$_cli_install_mode" = "user" ] && _cli_mode_flag="--user"
+    [ "$_cli_install_mode" = "root" ] && _cli_mode_flag="--root"
     # 管道安装模式：无参数时自动触发安装（curl ... | sh）
     if [ "$_is_piped_install" = "true" ] && [ -z "$fun" ]; then
         fun="install"
@@ -7195,7 +7456,7 @@ main() {
                     "$fun" "$var"
                 else
                     # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$fun" "$var" "$3"
+                    check_and_elevate "$fun" "$var" "$_arg3"
                 fi
                 return
                 ;;
@@ -7203,7 +7464,7 @@ main() {
         # 分组命令系统: clashtool.sh <group> <subcommand> [args]
         _group=$(_resolve_group "$fun")
         if [ -n "$_group" ]; then
-            _dispatch_group "$_group" "$var" "$3"
+            _dispatch_group "$_group" "$var" "$_arg3"
         elif [ "$fun" = "help" ]; then
             show_help
         elif [ -z "$fun" ]; then

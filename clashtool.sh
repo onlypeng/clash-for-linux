@@ -92,7 +92,9 @@ if [ "$(id -u)" -eq 0 ]; then
     if [ -n "$SUDO_USER" ] && [ -z "${CLASHTOOL_INSTALL_DIR:-}" ]; then
         _sudo_home=$(getent passwd "$SUDO_USER" 2>/dev/null | cut -d: -f6)
         [ -z "$_sudo_home" ] && _sudo_home="/home/$SUDO_USER"
-        if [ -d "${_sudo_home}/.local/${service_name}" ]; then
+        # 必须检查 clash 二进制是否存在（与非 root 检测逻辑一致），
+        # 不能仅检查目录是否存在——空目录会导致误判为用户级安装
+        if [ -f "${_sudo_home}/.local/${service_name}/clash" ]; then
             # 原始用户有用户级安装，使用其路径（解决 sudo 运行找不到用户文件的问题）
             _is_root_user=false
             _run_mode="user"
@@ -100,7 +102,7 @@ if [ "$(id -u)" -eq 0 ]; then
             symlink_dir="${_sudo_home}/.local/bin"
             symlink_path="${symlink_dir}/${cmd_name}"
         else
-            # 原始用户无安装，使用 root 全局路径
+            # 原始用户无用户级安装，使用系统级路径 /opt/clash
             install_dir="/opt/${service_name}"
             symlink_dir="/usr/local/bin"
             symlink_path="${symlink_dir}/${cmd_name}"
@@ -560,64 +562,92 @@ str_tail_by_width() {
     printf '%s' "$_stw_str" | awk -v o="$_stw_offset" -v l="$_stw_maxw" '{print substr($0, o, l)}'
 }
 
+# === TUI 渲染原语（供 tui_draw_menu / _tf_draw_form 复用）===
+
+# 计算箭头前缀槽宽度相关变量
+# 设置全局: _TUI_ARROW, _TUI_PREFIX_W, _TUI_TEXT_COL, _TUI_INACTIVE_PREFIX
+_tui_calc_prefix() {
+    _TUI_ARROW=$(tui_get_arrow)
+    _TUI_PREFIX_W=$(( $(str_display_width "$_TUI_ARROW") + 1 ))
+    _TUI_TEXT_COL=$(( 2 + _TUI_PREFIX_W ))
+    _TUI_INACTIVE_PREFIX=""
+    _tcp_k=0
+    while [ "$_tcp_k" -lt "$_TUI_PREFIX_W" ]; do
+        _TUI_INACTIVE_PREFIX="${_TUI_INACTIVE_PREFIX} "
+        _tcp_k=$((_tcp_k + 1))
+    done
+}
+
+# 绘制标题区：颜色设置 + 顶边框 + 居中标题行 + 分隔线 + 颜色重置
+# 参数: $1=标题文本, $2=可选预计算显示宽度（省略则现场计算）
+_tui_draw_title_block() {
+    _tdtb_title="$1"
+    if [ -n "$2" ]; then
+        _tdtb_w="$2"
+    else
+        _tdtb_w=$(str_display_width "$_tdtb_title")
+    fi
+    printf "%b" "${COLOR_CYAN}${COLOR_BOLD}"
+    printf "%s\033[K\n" "$MENU_BORDER_TOP"
+    _tdtb_p=$(( MENU_CONTENT_WIDTH - _tdtb_w ))
+    [ "$_tdtb_p" -lt 0 ] && _tdtb_p=0
+    _tdtb_pl=$(( _tdtb_p / 2 ))
+    printf "%s" "$MENU_LINE"
+    [ "$_tdtb_pl" -gt 0 ] && printf "%${_tdtb_pl}s" ""
+    printf "%b" "$_tdtb_title"
+    _tdtb_rp=$(( _tdtb_p - _tdtb_pl ))
+    [ "$_tdtb_rp" -gt 0 ] && printf "%${_tdtb_rp}s" ""
+    printf "%b\n" "\033[${MENU_RIGHT_COL}G${MENU_LINE}\033[K"
+    printf "%s\033[K\n" "$MENU_BORDER_MID"
+    printf "%b" "${COLOR_RESET}"
+}
+
+# 填充内容行剩余宽度并绘制右边界换行（用于菜单项/状态行/表单字段）
+# 参数: $1=已占用内容宽度
+_tui_fill_right_border() {
+    _tfrb_pad=$(( MENU_CONTENT_WIDTH - $1 ))
+    [ "$_tfrb_pad" -lt 0 ] && _tfrb_pad=0
+    printf "%${_tfrb_pad}s" ""
+    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+}
+
+# 绘制底部边框 + 颜色重置 + 清除屏幕剩余内容
+_tui_draw_bottom() {
+    printf "%b" "${COLOR_CYAN}"
+    printf "%s\033[K\n" "$MENU_BORDER_BOT"
+    printf "%b" "${COLOR_RESET}"
+    printf "\033[J"
+}
+
 tui_draw_menu() {
     _tdm_title="$1"
     _tdm_selected="$2"
     _tdm_total="$3"
     shift 3
     _tdm_i=0
-    _tdm_arrow=$(tui_get_arrow)
-    # 前缀槽宽度 = 箭头 + 1 空格；非选中项用等宽空格填充同一槽位
-    _tdm_prefix_w=$(( $(str_display_width "$_tdm_arrow") + 1 ))
-    # 文本固定起始列：║ 占 col 1，前缀槽占 col 2..(1+prefix_w)，文本从 col (2+prefix_w) 开始
-    # 用 ANSI 绝对定位固定此列，无论 ▶ 实际渲染为 1 或 2 列宽，选中/非选中文本起始列都一致
-    _tdm_text_col=$(( 2 + _tdm_prefix_w ))
-    _tdm_inactive_prefix=""
-    _tdm_k=0
-    while [ "$_tdm_k" -lt "$_tdm_prefix_w" ]; do
-        _tdm_inactive_prefix="${_tdm_inactive_prefix} "
-        _tdm_k=$((_tdm_k + 1))
-    done
+    _tui_calc_prefix
 
     # 隐藏光标 + 移动到左上角，不清屏（避免闪烁和光标残影）
     printf "\033[?25l\033[H"
 
-    # 标题栏
-    printf "%b" "${COLOR_CYAN}${COLOR_BOLD}"
-    printf "%s\033[K\n" "$MENU_BORDER_TOP"
-    # 使用缓存的标题宽度（由 tui_menu_select 预计算），避免每次渲染 fork 子进程
-    if [ -n "$_TMS_TITLE_W" ]; then
-        _tw="$_TMS_TITLE_W"
-    else
-        _tw=$(str_display_width "$_tdm_title")
-    fi
-    _tp=$(( MENU_CONTENT_WIDTH - _tw ))
-    [ "$_tp" -lt 0 ] && _tp=0
-    _tpl=$(( _tp / 2 ))
-    printf "%s" "$MENU_LINE"
-    [ "$_tpl" -gt 0 ] && printf "%${_tpl}s" ""
-    printf "%b" "$_tdm_title"
-    _trp=$(( _tp - _tpl ))
-    [ "$_trp" -gt 0 ] && printf "%${_trp}s" ""
-    printf "%b\n" "\033[${MENU_RIGHT_COL}G${MENU_LINE}\033[K"
-    printf "%s\033[K\n" "$MENU_BORDER_MID"
-    printf "%b" "${COLOR_RESET}"
+    # 标题栏（传入缓存的标题宽度以避免每次渲染 fork 子进程）
+    _tui_draw_title_block "$_tdm_title" "$_TMS_TITLE_W"
 
     # 菜单项
     for _tdm_item in "$@"; do
         printf "%b" "${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}"
         if [ "$_tdm_i" -eq "$_tdm_selected" ]; then
             # 选中项：反色高亮 + 箭头标记
-            # 先用反色空格填满前缀槽，回到槽首打印箭头，再用 ANSI 绝对定位将文本固定到 _tdm_text_col
+            # 先用反色空格填满前缀槽，回到槽首打印箭头，再用 ANSI 绝对定位将文本固定到 _TUI_TEXT_COL
             # 这样无论 ▶ 实际渲染为 1 或 2 列宽，文本起始列都与非选中项一致，消除选中项向左偏移
             printf "%b" "${TUI_HIGHLIGHT_INVERT}${COLOR_CYAN}"
-            printf "%${_tdm_prefix_w}s" ""
-            printf "\033[2G%s " "$_tdm_arrow"
-            printf "\033[%dG" "$_tdm_text_col"
+            printf "%${_TUI_PREFIX_W}s" ""
+            printf "\033[2G%s " "$_TUI_ARROW"
+            printf "\033[%dG" "$_TUI_TEXT_COL"
             printf "%b%s%b" "${COLOR_BOLD}${COLOR_WHITE}" "$_tdm_item" "${COLOR_RESET}"
         else
             # 非选中项：等宽空格前缀（与选中箭头前缀同宽）+ 普通色
-            printf "%s" "$_tdm_inactive_prefix"
+            printf "%s" "$_TUI_INACTIVE_PREFIX"
             printf "%b%s%b" "${COLOR_WHITE}" "$_tdm_item" "${COLOR_RESET}"
         fi
         # 使用缓存的菜单项宽度（由 tui_menu_select 预计算），避免每次渲染 fork 子进程
@@ -625,10 +655,7 @@ tui_draw_menu() {
         if [ -z "$_iw" ]; then
             _iw=$(str_display_width "$_tdm_item")
         fi
-        _pad=$(( MENU_CONTENT_WIDTH - _iw - _tdm_prefix_w ))
-        [ "$_pad" -lt 0 ] && _pad=0
-        printf "%${_pad}s" ""
-        printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+        _tui_fill_right_border $(( _iw + _TUI_PREFIX_W ))
         _tdm_i=$((_tdm_i + 1))
     done
 
@@ -646,10 +673,7 @@ tui_draw_menu() {
     fi
     printf "%b" "${COLOR_DIM}"
     printf "%s%s" "$MENU_LINE" "$_tdm_status"
-    _spad=$(( MENU_CONTENT_WIDTH - _sw ))
-    [ "$_spad" -lt 0 ] && _spad=0
-    printf "%${_spad}s" ""
-    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+    _tui_fill_right_border "$_sw"
 
     # 第二行：按键操作提示（使用 tui_menu_select 预计算的缓存）
     if [ -n "$_TMS_HINT_TEXT" ]; then
@@ -661,18 +685,10 @@ tui_draw_menu() {
     fi
     printf "%b" "${COLOR_DIM}"
     printf "%s%s" "$MENU_LINE" "$_tdm_hint"
-    _hpad=$(( MENU_CONTENT_WIDTH - _hw ))
-    [ "$_hpad" -lt 0 ] && _hpad=0
-    printf "%${_hpad}s" ""
-    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+    _tui_fill_right_border "$_hw"
 
-    # 底部边框（青色，与其他边框一致）
-    printf "%b" "${COLOR_CYAN}"
-    printf "%s\033[K\n" "$MENU_BORDER_BOT"
-    printf "%b" "${COLOR_RESET}"
-
-    # 清除屏幕剩余内容（如果新内容比旧内容短）
-    printf "\033[J"
+    # 底部边框 + 清除屏幕剩余内容
+    _tui_draw_bottom
 }
 
 # 处理菜单导航按键（供 tui_menu_select 主循环和排空循环复用）
@@ -1055,39 +1071,13 @@ tui_input() {
 #   _tf_title, _tf_count, _tf_prompt_<i>, _tf_value_<i>,
 #   _tf_current, _tf_error, _tf_nav_hint
 _tf_draw_form() {
-    _tfd_arrow=$(tui_get_arrow)
-    # 前缀槽宽度 = 箭头 + 1 空格；非活动字段用等宽空格填充同一槽位
-    _tfd_prefix_w=$(( $(str_display_width "$_tfd_arrow") + 1 ))
-    # 文本固定起始列：║ 占 col 1，前缀槽占 col 2..(1+prefix_w)，文本从 col (2+prefix_w) 开始
-    # 用 ANSI 绝对定位固定此列，无论 ▶ 实际渲染为 1 或 2 列宽，活动/非活动字段文本起始列都一致
-    _tfd_text_col=$(( 2 + _tfd_prefix_w ))
-    _tfd_inactive_prefix=""
-    _tfd_k=0
-    while [ "$_tfd_k" -lt "$_tfd_prefix_w" ]; do
-        _tfd_inactive_prefix="${_tfd_inactive_prefix} "
-        _tfd_k=$((_tfd_k + 1))
-    done
+    _tui_calc_prefix
 
     # 隐藏光标 + 定位左上角（不清屏，用 \033[K 逐行清除避免闪烁）
     printf "\033[?25l\033[H"
 
-    # === 顶部边框 ===
-    printf "%b" "${COLOR_CYAN}${COLOR_BOLD}"
-    printf "%s\033[K\n" "$MENU_BORDER_TOP"
-
-    # === 标题行（居中）===
-    _tfd_tw=$(str_display_width "$_tf_title")
-    _tfd_tp=$(( MENU_CONTENT_WIDTH - _tfd_tw ))
-    [ "$_tfd_tp" -lt 0 ] && _tfd_tp=0
-    _tfd_tpl=$(( _tfd_tp / 2 ))
-    printf "%s" "$MENU_LINE"
-    [ "$_tfd_tpl" -gt 0 ] && printf "%${_tfd_tpl}s" ""
-    printf "%b" "$_tf_title"
-    _tfd_trp=$(( _tfd_tp - _tfd_tpl ))
-    [ "$_tfd_trp" -gt 0 ] && printf "%${_tfd_trp}s" ""
-    printf "%b\n" "\033[${MENU_RIGHT_COL}G${MENU_LINE}\033[K"
-    printf "%s\033[K\n" "$MENU_BORDER_MID"
-    printf "%b" "${COLOR_RESET}"
+    # === 标题区（顶边框 + 居中标题 + 分隔线）===
+    _tui_draw_title_block "$_tf_title"
 
     # === 字段行 ===
     _tfd_active_pw=0
@@ -1099,7 +1089,7 @@ _tf_draw_form() {
         _tfd_pw=$(str_display_width "$_tfd_prompt")
         _tfd_vw=$(str_display_width "$_tfd_value")
         # 计算值可用宽度，超出时截取末尾显示（水平滚动）
-        _tfd_val_avail=$(( MENU_CONTENT_WIDTH - _tfd_prefix_w - _tfd_pw - 1 ))
+        _tfd_val_avail=$(( MENU_CONTENT_WIDTH - _TUI_PREFIX_W - _tfd_pw - 1 ))
         [ "$_tfd_val_avail" -lt 5 ] && _tfd_val_avail=5
         if [ "$_tfd_vw" -gt "$_tfd_val_avail" ]; then
             _tfd_display_value=$(str_tail_by_width "$_tfd_value" "$_tfd_val_avail")
@@ -1113,12 +1103,12 @@ _tf_draw_form() {
 
         if [ "$_tfd_i" -eq "$_tf_current" ]; then
             # 活动字段：反色 + 箭头 + 高亮（与菜单选中项样式统一，反色覆盖箭头/标签/值）
-            # 先用反色空格填满前缀槽，回到槽首打印箭头，再用 ANSI 绝对定位将文本固定到 _tfd_text_col
+            # 先用反色空格填满前缀槽，回到槽首打印箭头，再用 ANSI 绝对定位将文本固定到 _TUI_TEXT_COL
             # 这样无论 ▶ 实际渲染为 1 或 2 列宽，文本起始列都与非活动字段一致，消除选中项向左偏移
             printf "%b" "${TUI_HIGHLIGHT_INVERT}${COLOR_CYAN}"
-            printf "%${_tfd_prefix_w}s" ""
-            printf "\033[2G%s " "$_tfd_arrow"
-            printf "\033[%dG" "$_tfd_text_col"
+            printf "%${_TUI_PREFIX_W}s" ""
+            printf "\033[2G%s " "$_TUI_ARROW"
+            printf "\033[%dG" "$_TUI_TEXT_COL"
             printf "%b%s" "${COLOR_BOLD}${COLOR_WHITE}" "$_tfd_prompt"
             printf " "
             printf "%b%s%b" "${COLOR_BOLD}${COLOR_CYAN}" "$_tfd_display_value" "${COLOR_RESET}"
@@ -1126,17 +1116,14 @@ _tf_draw_form() {
             _tfd_active_vw="$_tfd_display_w"
         else
             # 非活动字段：等宽空格前缀（与活动箭头前缀同宽）+ 普通色（白色标签 + 青色数据）
-            printf "%s" "$_tfd_inactive_prefix"
+            printf "%s" "$_TUI_INACTIVE_PREFIX"
             printf "%b%s%b " "${COLOR_WHITE}" "$_tfd_prompt" "${COLOR_RESET}"
             printf "%b%s%b" "${COLOR_CYAN}" "$_tfd_display_value" "${COLOR_RESET}"
         fi
 
         # 填充到右边界（prefix + prompt + 1空格 + display_value）
-        _tfd_content_w=$(( _tfd_prefix_w + _tfd_pw + 1 + _tfd_display_w ))
-        _tfd_pad=$(( MENU_CONTENT_WIDTH - _tfd_content_w ))
-        [ "$_tfd_pad" -lt 0 ] && _tfd_pad=0
-        printf "%${_tfd_pad}s" ""
-        printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+        _tfd_content_w=$(( _TUI_PREFIX_W + _tfd_pw + 1 + _tfd_display_w ))
+        _tui_fill_right_border "$_tfd_content_w"
 
         _tfd_i=$((_tfd_i + 1))
     done
@@ -1154,22 +1141,16 @@ _tf_draw_form() {
         printf " %b" "${COLOR_DIM}${_tf_nav_hint}${COLOR_RESET}"
         _tfd_sw=$(str_display_width "$_tf_nav_hint")
     fi
-    _tfd_spad=$(( MENU_CONTENT_WIDTH - _tfd_sw - 1 ))
-    [ "$_tfd_spad" -lt 0 ] && _tfd_spad=0
-    printf "%${_tfd_spad}s" ""
-    printf "%b\n" "\033[${MENU_RIGHT_COL}G${COLOR_CYAN}${MENU_LINE}${COLOR_RESET}\033[K"
+    _tui_fill_right_border $(( _tfd_sw + 1 ))
 
-    # === 底部边框（青色，与其他边框一致）===
-    printf "%b" "${COLOR_CYAN}"
-    printf "%s\033[K\n" "$MENU_BORDER_BOT"
-    printf "%b" "${COLOR_RESET}"
-    printf "\033[J"
+    # === 底部边框 + 清除屏幕剩余内容 ===
+    _tui_draw_bottom
 
     # === 光标定位到活动字段值末尾 ===
     # 行: 1(顶边框) + 1(标题) + 1(分隔线) + _tf_current → ANSI 1-indexed: 4 + _tf_current
     # 列: 1(║) + prefix_w + prompt_width + 1(空格) + value_width → ANSI 1-indexed: 3 + prefix_w + pw + vw
     _tfd_cursor_row=$(( 4 + _tf_current ))
-    _tfd_cursor_col=$(( 3 + _tfd_prefix_w + _tfd_active_pw + _tfd_active_vw ))
+    _tfd_cursor_col=$(( 3 + _TUI_PREFIX_W + _tfd_active_pw + _tfd_active_vw ))
     [ "$_tfd_cursor_col" -ge "$MENU_RIGHT_COL" ] && _tfd_cursor_col=$(( MENU_RIGHT_COL - 1 ))
     printf "\033[%d;%dH" "$_tfd_cursor_row" "$_tfd_cursor_col"
     printf "\033[?25h"
@@ -1555,12 +1536,8 @@ select_subscription(){
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
             # 获取选择的订阅名
-            _ss_idx=0
-            for _ss_item in "$@"; do
-                [ "$_ss_idx" = "$MENU_RESULT" ] && break
-                _ss_idx=$((_ss_idx + 1))
-            done
-            SELECTED_SUB="$_ss_item"
+            _get_nth_arg "$MENU_RESULT" "$@"
+            SELECTED_SUB="$SELECTED_ITEM"
             return 0
             ;;
     esac
@@ -1626,9 +1603,7 @@ logs_menu(){
                 # 在子 shell 中跟踪日志，Ctrl+C 只退出子 shell，不影响主脚本
                 ( trap 'exit 0' INT; tail -f "$_lm_file" 2>/dev/null ) || true
                 ;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+            BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
         esac
     done
 }
@@ -1643,13 +1618,11 @@ backup_main() {
             "$menu_backup_option3" \
             "$menu_backup_option4"
         case "$MENU_RESULT" in
-            0) tui_clear; backup_config; pause_prompt;;
+            0) tui_clear; "$SCRIPT_PATH" tools backup; pause_prompt;;
             1) tui_clear; list_backups; pause_prompt;;
-            2) tui_clear; restore_backup; pause_prompt;;
-            3) tui_clear; delete_backup; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+            2) tui_clear; "$SCRIPT_PATH" tools restore; pause_prompt;;
+            3) tui_clear; "$SCRIPT_PATH" tools delete-backup; pause_prompt;;
+            BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
         esac
     done
 }
@@ -1663,11 +1636,9 @@ rules_main() {
             "$menu_rules_option3"
         case "$MENU_RESULT" in
             0) tui_clear; list_rules; pause_prompt;;
-            1) tui_clear; rules_edit; pause_prompt;;
-            2) tui_clear; rules_add; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+            1) tui_clear; "$SCRIPT_PATH" tools edit-rules; pause_prompt;;
+            2) tui_clear; "$SCRIPT_PATH" tools add-rule; pause_prompt;;
+            BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
         esac
     done
 }
@@ -1682,12 +1653,10 @@ profiles_main() {
             "$menu_profiles_option4"
         case "$MENU_RESULT" in
             0) tui_clear; list_profiles; pause_prompt;;
-            1) tui_clear; create_profile; pause_prompt;;
-            2) tui_clear; switch_profile; pause_prompt;;
-            3) tui_clear; delete_profile; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+            1) tui_clear; "$SCRIPT_PATH" tools create-profile; pause_prompt;;
+            2) tui_clear; "$SCRIPT_PATH" tools switch-profile; pause_prompt;;
+            3) tui_clear; "$SCRIPT_PATH" tools delete-profile; pause_prompt;;
+            BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
         esac
     done
 }
@@ -1699,11 +1668,9 @@ health_main() {
             "$menu_health_option1" \
             "$menu_health_option2"
         case "$MENU_RESULT" in
-            0) tui_clear; health_check; pause_prompt;;
-            1) tui_clear; toggle_auto_recovery; pause_prompt;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+            0) tui_clear; "$SCRIPT_PATH" tools health; pause_prompt;;
+            1) tui_clear; "$SCRIPT_PATH" tools toggle-recovery; pause_prompt;;
+            BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
         esac
     done
 }
@@ -1717,14 +1684,12 @@ tools(){
             "$menu_tools_option4" \
             "$menu_tools_option5"
         case "$MENU_RESULT" in
-            0) require_running || continue; logs_menu;;
+            0) logs_menu;;
             1) backup_main;;
             2) rules_main;;
             3) profiles_main;;
-            4) require_running || continue; health_main;;
-            BACK) break;;
-            QUIT) exit 0;;
-            INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+            4) health_main;;
+            BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
         esac
     done
 }
@@ -1737,6 +1702,13 @@ proxy_api_info() {
     _pa_host="${local_proxy_host}:${_pa_port}"
 }
 
+# Clash API GET 请求（依赖 proxy_api_info 设置的 _pa_host/_pa_secret）
+# 参数: $1=API路径（如 /proxies, /proxies/GROUP/delay?url=...）
+# 输出: API响应到 stdout，失败输出空字符串
+_clash_api_get() {
+    curl -s --max-time 5 "http://${_pa_host}$1" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null
+}
+
 proxy_select_group() {
     refresh_status
     if ! $clash_is_running; then
@@ -1744,7 +1716,7 @@ proxy_select_group() {
         return 1
     fi
     proxy_api_info
-    _psg_result=$(curl -s --max-time 5 "http://${_pa_host}/proxies" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+    _psg_result=$(_clash_api_get "/proxies")
     if [ -z "$_psg_result" ]; then
         failed "$proxy_api_failed_msg" false
         return 1
@@ -1842,7 +1814,7 @@ proxy_select_server() {
     _pss_group="$SELECTED_PROXY_GROUP"
     proxy_api_info
     # 获取该组信息
-    _pss_result=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_pss_group}" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+    _pss_result=$(_clash_api_get "/proxies/${_pss_group}")
     if [ -z "$_pss_result" ]; then
         failed "$proxy_api_failed_msg" false
         return 1
@@ -1935,7 +1907,7 @@ ${_pss_s}"
             _pss_json_name=$(printf '%s' "$_pss_real_name" | sed 's/\\/\\\\/g; s/"/\\"/g')
             curl -s --max-time 5 -X PUT "http://${_pa_host}/proxies/${_pss_group}" -H "Content-Type: application/json" -H "Authorization: Bearer ${_pa_secret}" -d "{\"name\":\"$_pss_json_name\"}" >/dev/null 2>&1
             # 验证切换是否成功
-            _pss_verify=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_pss_group}" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+            _pss_verify=$(_clash_api_get "/proxies/${_pss_group}")
             _pss_verify_now=$(printf '%s\n' "$_pss_verify" | "$yq_binary_path" e '.now' - 2>/dev/null)
             if [ "$_pss_verify_now" = "$_pss_real_name" ]; then
                 success "$(printf "$proxy_switch_success_msg" "$_pss_group" "$_pss_real_name")"
@@ -1961,13 +1933,13 @@ proxy_test_delay() {
     _ptd_group="$SELECTED_PROXY_GROUP"
     proxy_api_info
     # 获取该组所有服务器
-    _ptd_result=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_ptd_group}" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+    _ptd_result=$(_clash_api_get "/proxies/${_ptd_group}")
     _ptd_all=$(printf '%s\n' "$_ptd_result" | "$yq_binary_path" e '.all[]' - 2>/dev/null)
     _ptd_now=$(printf '%s\n' "$_ptd_result" | "$yq_binary_path" e '.now' - 2>/dev/null)
     if [ -z "$_ptd_all" ]; then
         # 非选择组，直接测当前代理延迟
         normal "$proxy_delay_testing_msg"
-        _ptd_delay_result=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_ptd_group}/delay?url=http://www.gstatic.com/generate_204&timeout=5000" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+        _ptd_delay_result=$(_clash_api_get "/proxies/${_ptd_group}/delay?url=http://www.gstatic.com/generate_204&timeout=5000")
         _ptd_delay=$(printf '%s\n' "$_ptd_delay_result" | "$yq_binary_path" e '.delay' - 2>/dev/null)
         if [ -n "$_ptd_delay" ] && [ "$_ptd_delay" != "null" ]; then
             success "$(printf "$proxy_delay_result_msg" "$_ptd_delay")"
@@ -1987,7 +1959,7 @@ proxy_test_delay() {
     for _ptd_s in $_ptd_all; do
         _ptd_is_current=""
         [ "$_ptd_s" = "$_ptd_now" ] && _ptd_is_current=" *"
-        _ptd_sr=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_ptd_s}/delay?url=http://www.gstatic.com/generate_204&timeout=3000" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+        _ptd_sr=$(_clash_api_get "/proxies/${_ptd_s}/delay?url=http://www.gstatic.com/generate_204&timeout=5000")
         _ptd_sd=$(printf '%s\n' "$_ptd_sr" | "$yq_binary_path" e '.delay' - 2>/dev/null)
         if [ -n "$_ptd_sd" ] && [ "$_ptd_sd" != "null" ]; then
             printf "%-30s %s%s\n" "${_ptd_s}${_ptd_is_current}" "${_ptd_sd}ms"
@@ -2006,7 +1978,7 @@ proxy_show_status() {
         return 1
     fi
     proxy_api_info
-    _pst_result=$(curl -s --max-time 5 "http://${_pa_host}/proxies" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+    _pst_result=$(_clash_api_get "/proxies")
     if [ -z "$_pst_result" ]; then
         failed "$proxy_api_failed_msg" false
         return 1
@@ -2036,7 +2008,7 @@ proxy_show_status() {
         # 测试当前选择的延迟
         _pst_delay=""
         if [ -n "$_pst_now" ] && [ "$_pst_now" != "null" ]; then
-            _pst_dr=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_pst_now}/delay?url=http://www.gstatic.com/generate_204&timeout=3000" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+            _pst_dr=$(_clash_api_get "/proxies/${_pst_now}/delay?url=http://www.gstatic.com/generate_204&timeout=3000")
             _pst_dv=$(printf '%s\n' "$_pst_dr" | "$yq_binary_path" e '.delay' - 2>/dev/null)
             if [ -n "$_pst_dv" ] && [ "$_pst_dv" != "null" ]; then
                 _pst_delay="${_pst_dv}ms"
@@ -2074,10 +2046,10 @@ proxy_url_test() {
     proxy_api_info
     normal "$(printf "$proxy_url_test_msg" "$_put_group")"
     # 触发 URL 测试
-    _put_result=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_put_group}/delay?url=http://www.gstatic.com/generate_204&timeout=5000" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+    _put_result=$(_clash_api_get "/proxies/${_put_group}/delay?url=http://www.gstatic.com/generate_204&timeout=5000")
     # 获取测试后的当前选择
     sleep 1
-    _put_verify=$(curl -s --max-time 5 "http://${_pa_host}/proxies/${_put_group}" -H "Authorization: Bearer ${_pa_secret}" 2>/dev/null)
+    _put_verify=$(_clash_api_get "/proxies/${_put_group}")
     _put_now=$(printf '%s\n' "$_put_verify" | "$yq_binary_path" e '.now' - 2>/dev/null)
     _put_delay=$(printf '%s\n' "$_put_result" | "$yq_binary_path" e '.delay' - 2>/dev/null)
     if [ -n "$_put_delay" ] && [ "$_put_delay" != "null" ]; then
@@ -2099,20 +2071,18 @@ menu() {
                 "$menu_service_option3" \
                 "$menu_service_option4"
             case "$MENU_RESULT" in
-                0) tui_clear; start; pause_prompt;;
-                1) require_running || continue; tui_clear; stop; pause_prompt;;
-                2) tui_clear; restart; pause_prompt;;
+                0) tui_clear; "$SCRIPT_PATH" start; pause_prompt;;
+                1) require_running || continue; tui_clear; "$SCRIPT_PATH" stop; pause_prompt;;
+                2) tui_clear; "$SCRIPT_PATH" restart; pause_prompt;;
                 3)
                     require_running || continue
                     tui_clear
                     if select_subscription; then
-                        reload "$SELECTED_SUB"
+                        "$SCRIPT_PATH" reload "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
-                BACK) break;;
-                QUIT) exit 0;;
-                INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+                BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
             esac
         done
     }
@@ -2170,9 +2140,7 @@ menu() {
                     "$SCRIPT_PATH" uninstall; pause_prompt;;
                 10) # 完全卸载含配置 - 核心+UI+配置
                     "$SCRIPT_PATH" uninstall all; pause_prompt;;
-                BACK) break;;
-                QUIT) exit 0;;
-                INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+                BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
             esac
         done
     }
@@ -2190,9 +2158,7 @@ menu() {
                 1) tui_clear; proxy_show_status; pause_prompt;;
                 2) tui_clear; proxy_test_delay; pause_prompt;;
                 3) tui_clear; proxy_url_test; pause_prompt;;
-                BACK) break;;
-                QUIT) exit 0;;
-                INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+                BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
             esac
         done
     }
@@ -2258,9 +2224,7 @@ menu() {
                     ;;
                 5) tui_clear; auto_update_sub false; pause_prompt;;
                 6) tui_clear; auto_update_sub true; pause_prompt;;
-                BACK) break;;
-                QUIT) exit 0;;
-                INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+                BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
             esac
         done
     }
@@ -2294,7 +2258,7 @@ menu() {
                         tui_clear; warn "$validate_name_msg" false; pause_prompt; continue
                     fi
                     [ -z "$_interval" ] && _interval="0"
-                    tui_clear; add "${_var}::${_sub_url}::${_interval}"
+                    tui_clear; "$SCRIPT_PATH" subscribe add "${_var}::${_sub_url}::${_interval}"
                     pause_prompt
                     ;;
                 1) # Modify subscription
@@ -2311,32 +2275,30 @@ menu() {
                         if [ -z "$_sub_url" ]; then
                             tui_clear; warn "$validate_url_msg" false; pause_prompt; continue
                         fi
-                        tui_clear; modify "$_sub_name" "$_sub_url" "$_interval"
+                        tui_clear; "$SCRIPT_PATH" subscribe modify "${_sub_name}::${_sub_url}::${_interval}"
                     fi
                     pause_prompt
                     ;;
                 2) # Delete subscription
                     if select_subscription; then
-                        tui_clear; del "$SELECTED_SUB"
+                        tui_clear; "$SCRIPT_PATH" subscribe del "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
                 3) tui_clear; list; pause_prompt;;
                 4) # Update subscription
                     if select_subscription; then
-                        tui_clear; update_sub "$SELECTED_SUB"
+                        tui_clear; "$SCRIPT_PATH" subscribe update "$SELECTED_SUB"
                     fi
                     pause_prompt
                     ;;
-                5) tui_clear; auto_update_sub false; pause_prompt;;
-                6) tui_clear; auto_update_sub true; pause_prompt;;
+                5) tui_clear; "$SCRIPT_PATH" subscribe auto-update off; pause_prompt;;
+                6) tui_clear; "$SCRIPT_PATH" subscribe auto-update on; pause_prompt;;
                 7) tui_clear; config_view; pause_prompt;;
-                8) tui_clear; config_set; pause_prompt;;
-                9) tui_clear; config_del; pause_prompt;;
-                10) tui_clear; config_edit_raw; pause_prompt;;
-                BACK) break;;
-                QUIT) exit 0;;
-                INVALID|*) printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"; sleep 1;;
+                8) tui_clear; "$SCRIPT_PATH" config set; pause_prompt;;
+                9) tui_clear; "$SCRIPT_PATH" config del; pause_prompt;;
+                10) tui_clear; "$SCRIPT_PATH" config edit; pause_prompt;;
+                BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
             esac
         done
     }
@@ -2345,8 +2307,8 @@ menu() {
     while true; do
         # 构建权限状态标识
         local _mm_mode_label
-        if is_root; then
-            _mm_mode_label="${COLOR_RED}[ROOT]${COLOR_RESET}"
+        if is_system_install; then
+            _mm_mode_label="${COLOR_RED}[SYSTEM]${COLOR_RESET}"
         else
             _mm_mode_label="${COLOR_GREEN}[USER]${COLOR_RESET}"
         fi
@@ -2364,15 +2326,11 @@ menu() {
             _mm_autostart_label="$menu_main_option1 ${COLOR_RED}${tui_status_off_label}${COLOR_RESET}"
         fi
         
-        # 网关选项：用户级安装时标记为不可用
-        if is_root; then
-            if is_gateway; then
-                _mm_gateway_label="$menu_main_option2 ${COLOR_GREEN}${tui_status_on_label}${COLOR_RESET}"
-            else
-                _mm_gateway_label="$menu_main_option2 ${COLOR_RED}${tui_status_off_label}${COLOR_RESET}"
-            fi
+        # 网关选项：通过子进程提权，非 root 也可用
+        if is_gateway; then
+            _mm_gateway_label="$menu_main_option2 ${COLOR_GREEN}${tui_status_on_label}${COLOR_RESET}"
         else
-            _mm_gateway_label="$menu_main_option2 ${COLOR_DIM}${tui_status_na_root_label}${COLOR_RESET}"
+            _mm_gateway_label="$menu_main_option2 ${COLOR_RED}${tui_status_off_label}${COLOR_RESET}"
         fi
 
         if is_proxy; then
@@ -2394,14 +2352,17 @@ menu() {
             "$menu_main_option9"
         case "$MENU_RESULT" in
             0) require_installed || continue; service_menu;;
-            1) require_installed || continue; tui_clear; if is_auto_start; then auto_start false; else auto_start true; fi; pause_prompt;;
-            2) 
+            1) require_installed || continue
+               tui_clear
+               # 子进程调用以触发 _run_priv 自动提权（与 gateway 模式一致）
+               if is_auto_start; then "$SCRIPT_PATH" system autostart off; else "$SCRIPT_PATH" system autostart on; fi
+               pause_prompt;;
+            2)
                 require_installed || continue
-                if is_root; then
-                    tui_clear; if is_gateway; then gateway false; else gateway true; fi; pause_prompt
-                else
-                    tui_clear; permission_denied_msg "gateway"; printf "\n"; pause_prompt
-                fi
+                tui_clear
+                # 子进程调用以触发 _run_priv 自动提权（与 install_menu 模式一致）
+                if is_gateway; then "$SCRIPT_PATH" system gateway off; else "$SCRIPT_PATH" system gateway on; fi
+                pause_prompt
                 ;;
             3) require_installed || continue; tui_clear; if is_proxy; then proxy_off; else proxy_on; fi; pause_prompt;;
             4) require_installed || continue; sub_config_menu;;
@@ -2544,7 +2505,18 @@ auto_update_sub_off_success_msg="Auto update subscription has been turned off"
 auto_update_sub_on_success_msg="Auto update subscription has been turned on"
 update_default_sub_failed_msg="Currently using default configuration, cannot update"
 update_local_sub_failed_msg="This is a local configuration, skipping this operation"
+update_sub_summary_msg="Subscription update summary - Success: %d Failed: %d Skipped: %d"
+update_sub_failed_msg="Subscription update had failures, please check the logs above"
 not_sub_exists_msg="Subscription does not exist"
+sub_base64_detected_msg="Base64-encoded subscription content detected, auto-decoding..."
+sub_base64_decoded_msg="Base64 decoding successful"
+sub_base64_failed_msg="Base64 decoding failed, content may not be encoded or has invalid format"
+sub_need_convert_msg="Decoded content is node-link list (not YAML). Use a subscription conversion service to convert to Clash YAML, then re-add the subscription"
+sub_convert_using_msg="Node-link format detected, converting via subscription conversion service (API: %s)..."
+sub_convert_success_msg="Subscription conversion successful"
+sub_convert_failed_msg="Subscription conversion failed, please check the conversion service or convert manually"
+sub_convert_empty_msg="No subscription conversion service configured. Options: 1) run 'config tool subscription_convert_api::<URL>' to configure; 2) convert node links manually and re-add; 3) use a subscription URL with built-in conversion"
+sub_convert_tag_msg="Subscription convert"
 auto_start_enabled_success_msg="Auto start has been enabled"
 auto_start_turned_off_success_msg="Auto start has been turned off"
 status_running_msg="Status: Running"
@@ -2580,6 +2552,7 @@ proxy_invalid_port_msg="Invalid proxy port: %s"
 proxy_port_unreachable_msg="Warning: port %s is not reachable (proxy may not be ready)"
 proxy_root_needed_msg="Root privileges needed for system-level proxy settings (skipping)"
 proxy_partial_msg="%d/%d steps had errors"
+proxy_rc_not_writable_msg="%s is not writable (owner mismatch, likely caused by a previous sudo run). Fix: sudo chown \$USER:\$USER %s"
 proxy_applied_msg="Applied to: %s"
 proxy_cleanup_incomplete_msg="Proxy cleanup incomplete, some settings may remain"
 gateway_enable_success_msg="Gateway has been enabled"
@@ -2625,6 +2598,11 @@ health_clash_uptime_msg="Clash uptime:"
 health_clash_memory_msg="Clash memory usage:"
 health_clash_cpu_msg="Clash CPU usage:"
 health_clash_connections_msg="Active connections:"
+health_check_manual_restart_hint_msg="Clash is stopped, please restart it manually"
+health_check_auto_recovery_start_msg="Clash is not running, attempting auto-recovery..."
+health_check_auto_recovery_success_msg="Clash auto-recovery succeeded"
+health_check_auto_recovery_fail_count_msg="Auto-recovery failed, cumulative failure count: %d"
+health_check_auto_recovery_disabled_after_failures_msg="Auto-recovery has failed 3 consecutive times; auto-recovery has been disabled. Please investigate manually"
 rules_builtin_msg="Built-in Rules"
 rules_custom_msg="Custom Rules"
 rules_provider_msg="Rule Providers"
@@ -2665,8 +2643,9 @@ _help_row() {
 }
 
 show_help() {
+    local _help_sep="${COLOR_CYAN}─────────────────────────────────────────────────────────────────${COLOR_RESET}"
     printf "%b\n" "${COLOR_CYAN}${COLOR_BOLD}  Clash for Linux - Command Reference${COLOR_RESET}"
-    printf "%b\n" "${COLOR_CYAN}─────────────────────────────────────────────────────────────────${COLOR_RESET}"
+    printf "%b\n" "$_help_sep"
     printf "%b\n" "${COLOR_GREEN}  Direct:  clashtool.sh start|stop|restart|reload|status${COLOR_RESET}"
     printf "%b\n" "${COLOR_GREEN}  Grouped: clashtool.sh <group> <subcommand> [args]${COLOR_RESET}"
     printf "%b\n" "${COLOR_GREEN}  Install: Root -> /opt/clash + /usr/local/bin/clashtool${COLOR_RESET}"
@@ -2680,6 +2659,7 @@ show_help() {
     _help_row "status" "" "View Clash running status"
     printf "%b\n" "${COLOR_YELLOW}${COLOR_BOLD}  subscribe  - Subscription Management${COLOR_RESET}"
     _help_row "subscribe add" "name::url::interval" "Add/modify subscription"
+    _help_row "subscribe modify" "name::url::interval" "Modify existing subscription"
     _help_row "subscribe del" "name" "Delete subscription"
     _help_row "subscribe list" "" "List all subscriptions"
     _help_row "subscribe update" "[name|all]" "Update subscription file(s)"
@@ -2735,10 +2715,10 @@ show_help() {
     _help_row "tools health" "" "Health check & status"
     _help_row "tools toggle-recovery" "" "Toggle auto-recovery"
     _help_row "tools symlink" "" "Repair clashtool symlink"
-    printf "%b\n" "${COLOR_CYAN}─────────────────────────────────────────────────────────────────${COLOR_RESET}"
+    printf "%b\n" "$_help_sep"
     printf "%b\n" "${COLOR_DIM}  Interactive menu: run 'clashtool' without arguments${COLOR_RESET}"
     printf "%b\n" "${COLOR_DIM}  Proxy commands require: source clashtool.sh proxy on/off${COLOR_RESET}"
-    printf "%b\n" "${COLOR_CYAN}─────────────────────────────────────────────────────────────────${COLOR_RESET}"
+    printf "%b\n" "$_help_sep"
 }
 main_msg="Invalid command. Type 'help' to view available commands."
 unknown_command_msg="Unknown command: %s"
@@ -2761,7 +2741,6 @@ symlink_check_ok_msg="Symlink OK: %s -> %s"
 symlink_broken_msg="Symlink broken: %s"
 symlink_not_found_msg="Symlink 'clashtool' not found in PATH"
 symlink_repair_done_msg="Symlink created: %s -> %s"
-gateway_root_needed_msg="Gateway mode requires root privileges"
 install_pre_check_msg="Pre-installation check..."
 install_progress_msg="Installing... [%d/%d]"
 install_verify_msg="Verifying installation..."
@@ -2924,10 +2903,54 @@ get_dict_value() {
 section_exists() {
     section=$1
     file=$2
-    [ -z "$file" ] && return 1
-    [ ! -f "$file" ] && return 1
+    _ini_require_file "$file" || return 1
     grep -q "^\[$section\]$" "$file"
     return $?
+}
+
+# 用临时文件原子更新目标文件（保留原 inode/权限/属主）
+# 用于 update_ini/delete_ini_section 等，替代 "cat "$temp" > "$file" && rm -f "$temp"" 重复
+# 参数: $1=临时文件, $2=目标文件
+_replace_file_via_temp() {
+    cat "$1" > "$2" && rm -f "$1"
+}
+
+# INI 函数前置存在性检查：文件名非空且文件存在
+# 用于 find_ini/update_ini/delete_ini_section/find_ini_section，替代 "[ -z ] && [ ! -f ]" 重复
+# 参数: $1=文件名
+_ini_require_file() {
+    [ -n "$1" ] && [ -f "$1" ] || return 1
+}
+
+# 菜单循环尾部统一处理：BACK 返回上层（调用方 break），QUIT 退出，INVALID 提示后继续
+# 用于所有子菜单 case 尾部，替代重复的 BACK/QUIT/INVALID 三行模式
+# 参数: $1=MENU_RESULT
+# 返回: 1=BACK（调用方通过 || break 处理）；0=INVALID 已处理（继续循环）；QUIT 不返回
+# 用法: BACK|QUIT|INVALID|*) _menu_loop_tail "$MENU_RESULT" || break;;
+_menu_loop_tail() {
+    case "$1" in
+        BACK) return 1 ;;
+        QUIT) exit 0 ;;
+        INVALID|*)
+            printf "%b\n" "${COLOR_RED}${menu_invalid_choice}${COLOR_RESET}"
+            sleep 1
+            return 0
+            ;;
+    esac
+}
+
+# 从位置参数中获取第 N 项（0-indexed），结果存入 SELECTED_ITEM
+# 用于 select_subscription/select_backup/select_profile 等选择函数
+# 参数: $1=索引, $2..=候选列表
+_get_nth_arg() {
+    _gna_target="$1"
+    shift
+    _gna_idx=0
+    for _gna_item in "$@"; do
+        [ "$_gna_idx" = "$_gna_target" ] && break
+        _gna_idx=$((_gna_idx + 1))
+    done
+    SELECTED_ITEM="$_gna_item"
 }
 
 # 参数：
@@ -2942,8 +2965,7 @@ update_ini() {
     local file="$4"
     local temp_file="${file}.tmp"
 
-    [ -z "$file" ] && return 1
-    [ ! -f "$file" ] && return 1
+    _ini_require_file "$file" || return 1
 
     awk -v section="$section" -v key="$key" -v value="$value" '
     BEGIN { in_section = 0; key_written = 0 }
@@ -2975,7 +2997,7 @@ update_ini() {
             print "[" section "]"
             print key "=" value
         }
-    }' "$file" > "$temp_file" && cat "$temp_file" > "$file" && rm -f "$temp_file"
+    }' "$file" > "$temp_file" && _replace_file_via_temp "$temp_file" "$file"
 }
 # 参数：
 #   $1: section - 指定节
@@ -2989,8 +3011,7 @@ delete_ini_section() {
     file="$2"
     local temp_file="${file}.tmp"
 
-    [ -z "$file" ] && return 1
-    [ ! -f "$file" ] && return 1
+    _ini_require_file "$file" || return 1
 
     awk -v section="$section" '
     BEGIN { in_section = 0 }
@@ -2999,7 +3020,7 @@ delete_ini_section() {
         if ($0 == "[" section "]") in_section = 1
     }
     !in_section { print }
-    ' "$file" > "$temp_file" && cat "$temp_file" > "$file" && rm -f "$temp_file"
+    ' "$file" > "$temp_file" && _replace_file_via_temp "$temp_file" "$file"
 }
 
 # 参数：
@@ -3013,8 +3034,7 @@ find_ini() {
     local file="$3"
 
     # 文件为空或不存在时直接返回，避免 awk 卡在 stdin
-    [ -z "$file" ] && return 1
-    [ ! -f "$file" ] && return 1
+    _ini_require_file "$file" || return 1
 
     awk -v section="$section" -v key="$key" '
     BEGIN { in_section = 0 }
@@ -4280,6 +4300,53 @@ set_install_paths() {
     yq_binary_path="${install_dir}/yq"
 }
 
+# 安装核心后按需安装 UI（已装则跳过）
+# 用于 install 无子命令与 install core 共享"核心+UI"组合逻辑
+# 依赖全局: _dg_arg（版本参数）
+_install_core_then_ui() {
+    install "$_dg_arg" || return 1
+    if ! is_ui_installed; then
+        install_ui "$_dg_arg" || return 1
+    else
+        normal "$ui_already_installed_skip_msg"
+    fi
+}
+
+# install 安装级别选择 + 提权 + 安装的统一入口
+# 合并 install 无子命令与 install core 的 prompt_install_mode→set_install_paths→提权→安装 流程
+# 参数: $1=with_ui（true 时装完核心后按需装 UI，false 时仅装核心）
+# 依赖全局: _dg_arg, _dg_group, _dg_sub, _cli_mode_flag
+_install_with_mode() {
+    _iwm_ui="$1"
+    prompt_install_mode
+    _pim_ret=$?
+    [ "$_pim_ret" = "2" ] && return 1
+    if [ "$_pim_ret" = "0" ]; then
+        # 用户级安装
+        set_install_paths "user"
+        if [ "$_iwm_ui" = "true" ]; then
+            _install_core_then_ui
+        else
+            install "$_dg_arg"
+        fi
+    else
+        # 系统级安装
+        [ -z "$_cli_mode_flag" ] && _cli_mode_flag="--root"
+        if is_root; then
+            set_install_paths "root"
+            if [ "$_iwm_ui" = "true" ]; then
+                _install_core_then_ui
+            else
+                install "$_dg_arg"
+            fi
+        else
+            # 非 root 用户需要提权
+            normal "$install_mode_root_selected_msg"
+            check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg" $_cli_mode_flag
+        fi
+    fi
+}
+
 # 参数: $1：version - clash版本 （可为空），默认为最新版本
 install() {
     clash_version=$1
@@ -4479,10 +4546,7 @@ install_ui() {
     update_clashtool_config 'ui' "$ui_name"
     success "ClashUI $install_success_msg"
     # 刷新运行状态，如果正在运行则重新启动
-    refresh_status
-    if $clash_is_running;then
-        restart
-    fi
+    _restart_if_running
 }
 
 uninstall_ui(){
@@ -4501,10 +4565,7 @@ uninstall_ui(){
     delete_user_config 'external-ui'
     success "ClashUI $uninstall_success_msg"
     # 刷新运行状态，如果状态为运行则重新启动
-    refresh_status
-    if $clash_is_running;then
-        restart
-    fi
+    _restart_if_running
 }
 
 # 参数：$1 - UI类型（yacd或dashboard或zashboard）可为空，默认当前使用的ui
@@ -4518,10 +4579,7 @@ update_ui(){
     success "ClashUI $uninstall_success_msg"
     install_ui "$1"
     # 刷新运行状态，如果状态为运行则重新启动
-    refresh_status
-    if $clash_is_running;then
-        restart
-    fi
+    _restart_if_running
 }
 
 # 函数: 更新clashtool脚本
@@ -4654,10 +4712,14 @@ start() {
         fi
         # 启动clash
         nohup "${clash_binary_path}" -d "${config_dir}" > "${log_dir}/clash.log" 2>&1 &
-        # 等待启动成功
-        sleep 3
-        # 刷新状态并判断是否启动失败
-        refresh_status
+        # flow_10 节点：决策"启动成功?" — 轮询探测就绪，最多等待 5 秒，就绪即提前退出
+        local _st_wait=0
+        while [ "$_st_wait" -lt 5 ]; do
+            sleep 1
+            refresh_status
+            $clash_is_running && break
+            _st_wait=$((_st_wait + 1))
+        done
         if ! $clash_is_running; then
             failed "$clash_start_failed_msg"
             return 1
@@ -4711,7 +4773,7 @@ stop() {
         for temp_pid in $_stop_pids; do
             [ -n "$temp_pid" ] && kill "${temp_pid}" 2>/dev/null
         done
-        # 等待进程结束（最多3秒）
+        # 等待进程结束（最多30秒，每次 sleep 1 探测一次）
         local _s_wait=0
         local _still_alive=false
         while [ "$_s_wait" -lt 30 ]; do
@@ -4769,7 +4831,18 @@ stop() {
 # 参数: $1 - 订阅名称 （可为空），默认为当前使用订阅
 restart() {
     stop
-    start "$1"
+    # flow_12 节点：决策"启动成功?" — start 失败时已内部打印错误消息，此处仅传递失败
+    start "$1" || return 1
+}
+
+# 刷新运行状态，若 Clash 正在运行则重启
+# 用于 install_ui/uninstall_ui/update_ui 尾部，消除 refresh_status+if restart 重复
+# 用 if 结构而非 && ，保证 Clash 未运行时返回 0（与原 if-then-fi 语义一致）
+_restart_if_running() {
+    refresh_status
+    if $clash_is_running; then
+        restart
+    fi
 }
 
 # 参数: $1：sub_name - 订阅名称 （可为空），默认为当前使用订阅
@@ -5032,47 +5105,195 @@ del() {
 # 参数: $1：sub_name - 订阅名称或all（可为空）， 默认为当前使用订阅
 update_sub() {
     sub_name=$1
-    # 是否更新所有订阅
+    # flow_18 节点：计数器（成功/失败/跳过）
+    local _us_ok=0
+    local _us_fail=0
+    local _us_skip=0
+    local _us_use _us_names _us_name _us_old_ifs
+
+    # flow_18 节点：列出所有订阅 → 选择更新范围（单个/全部）
     if [ "${sub_name}" = "all" ]; then
-        # 更新所有订阅配置
-        names=$(find_subscription_config '' 'names')
-        echo "$names" | tr ',' '\n' | while IFS= read -r name; do
-            if [ -n "$name" ]; then
-                download_sub "${name}"
+        # all 模式：遍历所有订阅
+        _us_use=$(find_subscription_config '' 'use')
+        _us_names=$(find_subscription_config '' 'names')
+        # 修复管道子 shell 导致计数丢失：改用 IFS+set -- 将逗号列表拆分为位置参数，
+        # 在当前 shell 内遍历（POSIX 兼容，与 select_subscription 同一写法）。
+        _us_old_ifs="$IFS"
+        IFS=','
+        set -f
+        # shellcheck disable=SC2086  # 此处需按 IFS 分词
+        set -- $_us_names
+        set +f
+        IFS="$_us_old_ifs"
+        for _us_name in "$@"; do
+            [ -z "$_us_name" ] && continue
+            # flow_18 节点：下载订阅内容（超时30s,重试3次 由 download 内部处理）
+            # 子 shell 隔离 download_sub 内部 failed 在 cron 下的 exit 1；文件写入副作用仍持久化
+            if ( download_sub "${_us_name}" ); then
+                _us_ok=$((_us_ok + 1))
+            else
+                _us_fail=$((_us_fail + 1))
             fi
         done
-        # all 模式下使用当前订阅进行 reload，未配置则跳过
-        use=$(find_subscription_config '' 'use')
     else
-        # 当前使用配置文件
-        use=$(find_subscription_config '' 'use')
+        # 单个模式
+        _us_use=$(find_subscription_config '' 'use')
         # 更新当前使用配置
         if [ -z "${sub_name}" ]; then
-            if [ "$use" = "default" ];then
+            if [ "$_us_use" = "default" ];then
                 warn "$update_default_sub_failed_msg" false
                 return 1
             fi
-            download_sub "${use}"
+            if ( download_sub "${_us_use}" ); then
+                _us_ok=$((_us_ok + 1))
+            else
+                _us_fail=$((_us_fail + 1))
+            fi
         else
             # 更新指定订阅配置
             if subscription_exists "${sub_name}"; then
-                download_sub "${sub_name}"
+                if ( download_sub "${sub_name}" ); then
+                    _us_ok=$((_us_ok + 1))
+                else
+                    _us_fail=$((_us_fail + 1))
+                fi
             else
                 failed "$not_sub_exists_msg"
                 return 1
             fi
         fi
     fi
-    success "$update_sub_success_msg"
+
+    # flow_18 节点：汇总 成功数/失败数/跳过数
+    normal "$(printf "$update_sub_summary_msg" "$_us_ok" "$_us_fail" "$_us_skip")"
+
+    # 根据是否有失败决定打印 success/failed（failed 显式传 false 避免 cron exit）
+    if [ "$_us_fail" -gt 0 ]; then
+        failed "$update_sub_failed_msg" false
+    else
+        success "$update_sub_success_msg"
+    fi
+
     # 刷新运行状态，重载配置文件
     refresh_status
-    if $clash_is_running && [ -n "$use" ]; then
-        reload "$use"
+    if $clash_is_running && [ -n "$_us_use" ]; then
+        reload "$_us_use"
+    fi
+
+    # 关键函数失败返回 1（保持语义：有失败项则返回 1）
+    [ "$_us_fail" -gt 0 ] && return 1
+    return 0
+}
+
+# 参数：$1:str - 待编码字符串
+# 作用：对 URL 中的特殊字符进行百分比编码，用于拼接订阅转换 API 的 url 参数
+#       顺序：先编码 % 避免二次编码，再编码 & ? # 空格 | + " 等
+_url_encode() {
+    printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/&/%26/g' -e 's/?/%3F/g' -e 's/#/%23/g' -e 's/ /%20/g' -e 's/|/%7C/g' -e 's/+/%2B/g' -e 's/"/%22/g'
+}
+
+# 参数：$1:file - 目标文件路径, $2:sub_url - 原始订阅 URL
+# 返回值: 0=转换成功, 1=未配置或转换失败
+# 作用：检测到节点链接时，调用订阅转换服务（subscription_convert_api 配置项）
+#       将订阅 URL 转为 Clash YAML 并覆盖目标文件；未配置则提醒用户自行转换。
+_bd_try_convert() {
+    _tc_file="$1"
+    _tc_sub_url="$2"
+    _tc_api=$(find_clashtool_config "subscription_convert_api" 2>/dev/null)
+
+    # 未配置转换 API 或缺少原始订阅 URL → 提醒用户
+    if [ -z "$_tc_api" ] || [ -z "$_tc_sub_url" ]; then
+        warn "$sub_convert_empty_msg" false
+        return 1
+    fi
+
+    normal "$(printf "$sub_convert_using_msg" "$_tc_api")"
+
+    # 构造转换 URL：{api}?target=clash&url={encoded_sub_url}（兼容 API 已含查询参数）
+    _tc_encoded=$(_url_encode "$_tc_sub_url")
+    case "$_tc_api" in
+        *\?*) _tc_convert_url="${_tc_api}&target=clash&url=${_tc_encoded}" ;;
+        *)    _tc_convert_url="${_tc_api}?target=clash&url=${_tc_encoded}" ;;
+    esac
+
+    # 调用转换服务覆盖原文件（enable=false，避免加 github 代理）
+    if download "$_tc_file" "$_tc_convert_url" "$sub_convert_tag_msg" false; then
+        success "$sub_convert_success_msg"
+        return 0
+    else
+        warn "$sub_convert_failed_msg" false
+        return 1
     fi
 }
 
-# 
-# 参数: 
+# 参数：$1:file - 待检测的订阅文件路径
+#       $2:sub_url - 原始订阅 URL（用于调用订阅转换服务，可选）
+# 返回值: 0=已解码或无需解码或转换成功, 1=解码或转换失败
+# 作用：自动检测 Base64 编码的订阅文件并解码；
+#   - 明文 YAML：直接跳过；
+#   - 节点链接格式（明文或 Base64 解码后）：调用订阅转换服务转换；
+#     若未配置 subscription_convert_api 则提醒用户自行转换。
+#   - 纯 Base64（解码后为 YAML）：用 base64/openssl 解码后覆盖原文件。
+_try_base64_decode() {
+    _bd_file="$1"
+    _bd_sub_url="$2"
+    # 文件不存在或为空，跳过
+    [ ! -s "$_bd_file" ] && return 0
+
+    # 已包含 YAML 特征，视为明文，无需解码
+    if grep -qE '^(proxies|proxy-groups|mixed-port|socks-port|allow-lan|external-controller):' "$_bd_file"; then
+        return 0
+    fi
+
+    # 检测明文节点链接格式（ss/ssr/vmess/trojan/vless/hysteria/tuic 等）→ 调用订阅转换服务
+    if grep -qE '^(ss|ssr|vmess|trojan|vless|hysteria2?|tuic)://' "$_bd_file"; then
+        _bd_try_convert "$_bd_file" "$_bd_sub_url"
+        return $?
+    fi
+
+    # 读取并去除所有空白字符
+    _bd_content=$(tr -d '[:space:]' < "$_bd_file")
+    [ -z "$_bd_content" ] && return 0
+
+    # 长度必须是 4 的倍数（Base64 padding 规则）
+    _bd_len=${#_bd_content}
+    [ $((_bd_len % 4)) -ne 0 ] && return 0
+
+    # 仅含 Base64 字符集（A-Z a-z 0-9 + / =）
+    case "$_bd_content" in
+        *[!A-Za-z0-9+/=]*) return 0 ;;
+    esac
+
+    normal "$sub_base64_detected_msg"
+
+    _bd_decoded="${_bd_file}.decoded"
+    : > "$_bd_decoded"
+    # 优先使用 base64 命令，失败时回退到 openssl
+    if ! printf '%s' "$_bd_content" | base64 -d > "$_bd_decoded" 2>/dev/null || [ ! -s "$_bd_decoded" ]; then
+        : > "$_bd_decoded"
+        if ! printf '%s' "$_bd_content" | openssl base64 -d -A > "$_bd_decoded" 2>/dev/null || [ ! -s "$_bd_decoded" ]; then
+            rm -f "$_bd_decoded"
+            warn "$sub_base64_failed_msg" false
+            return 1
+        fi
+    fi
+
+    # 校验解码结果：包含 YAML 特征 → 覆盖原文件
+    if grep -qE '^(proxies|proxy-groups|mixed-port|socks-port|allow-lan|external-controller):' "$_bd_decoded"; then
+        cat "$_bd_decoded" > "$_bd_file"
+        rm -f "$_bd_decoded"
+        success "$sub_base64_decoded_msg"
+        return 0
+    fi
+
+    # 解码成功但非 YAML（节点链接列表）→ 调用订阅转换服务
+    rm -f "$_bd_decoded"
+    _bd_try_convert "$_bd_file" "$_bd_sub_url"
+    return $?
+}
+
+#
+# 参数:
 #   $1：name - 订阅名称
 #   $2: url - 订阅地址 可为空，自动获取配置中url
 download_sub() {
@@ -5092,6 +5313,8 @@ download_sub() {
         temp_sub_path="${subscription_dir}/${name}.new.yaml"
         # 下载订阅文件
         download "${temp_sub_path}" "${url}" "${name}" $subscription_use_proxy || return 1
+        # 自动检测并解码 Base64 编码的订阅内容（节点链接则尝试订阅转换）
+        _try_base64_decode "$temp_sub_path" "$url" || { rm -f "$temp_sub_path"; return 1; }
         # 检查订阅文件是否有效
         check_config "$temp_sub_path" || { rm -f "$temp_sub_path"; return 1; }
         # 如果已存在则备份原先订阅
@@ -5151,13 +5374,8 @@ auto_update_sub() {
 gateway(){
     enable=${1:-true}
     verify $enable || return 1
-    # 网关模式需要 root 权限（设置 IP 转发）
-    if ! is_root; then
-        permission_denied_msg "gateway"
-        printf "\n"
-        failed "$gateway_root_forward_msg"
-        return 1
-    fi
+    # flow_23: root 提权由派发层 _run_priv 处理（system/gateway → _apply_tri_state gateway
+    # → check_and_elevate），到达本函数时已为 root，无需重复 is_root 检查。
     # Docker 环境下网关模式可能受限
     if is_docker && $enable; then
         warn "$docker_gateway_warn_msg" false
@@ -5202,7 +5420,7 @@ get_service_file(){
 }
 
 create_service_file(){
-    if ! is_root; then
+    if ! is_system_install; then
         normal "$user_level_skip_service_msg"
         return 0
     fi
@@ -5262,8 +5480,8 @@ create_service_file(){
 }
 
 del_service_file(){
-    # 与 create_service_file 对称：非 root 跳过（用户级安装不创建系统服务文件）
-    if ! is_root; then
+    # 与 create_service_file 对称：用户级安装跳过（不创建系统服务文件）
+    if ! is_system_install; then
         return 0
     fi
     service_file=$(get_service_file)
@@ -5278,7 +5496,7 @@ auto_start() {
     enable=${1:-true}
     verify "$enable"
     # 用户级安装使用桌面自动启动或bashrc
-    if ! is_root; then
+    if ! is_system_install; then
         _as_autostart_dir="${HOME}/.config/autostart"
         _as_desktop_file="${_as_autostart_dir}/clash.desktop"
         
@@ -5424,6 +5642,13 @@ _proxy_set_shell_rc() {
     _psrc_socks_port="$3"
     [ ! -f "$_psrc_file" ] && return 1
 
+    # 属主可写性检测：历史 sudo 运行可能把 RC 文件属主改成 root，导致普通用户写入失败。
+    # 提前检测并给出修复提示，避免沉默失败（cat 重定向虽不改变 inode，但仍需写权限）。
+    if [ ! -w "$_psrc_file" ]; then
+        warn "$(printf "$proxy_rc_not_writable_msg" "$_psrc_file" "$_psrc_file")" false
+        return 1
+    fi
+
     # 备份
     _psrc_bak="${_psrc_file}.bak.$(date +%Y%m%d%H%M%S)"
     cp "$_psrc_file" "$_psrc_bak" 2>/dev/null
@@ -5487,7 +5712,8 @@ _proxy_set_shell_rc() {
             ;;
     esac
 
-    mv "$_psrc_tmp" "$_psrc_file" 2>/dev/null || return 1
+    # 用 cat 重定向而非 mv，保留原文件 inode/属主/权限（避免 sudo 运行后 .bashrc 变为 root 属主）
+    cat "$_psrc_tmp" > "$_psrc_file" 2>/dev/null && rm -f "$_psrc_tmp" || return 1
     return 0
 }
 
@@ -5495,6 +5721,12 @@ _proxy_set_shell_rc() {
 _proxy_unset_shell_rc() {
     _purc_file="$1"
     [ ! -f "$_purc_file" ] && return 1
+
+    # 属主可写性检测：与 _proxy_set_shell_rc 一致，避免属主异常时沉默失败。
+    if [ ! -w "$_purc_file" ]; then
+        warn "$(printf "$proxy_rc_not_writable_msg" "$_purc_file" "$_purc_file")" false
+        return 1
+    fi
 
     # 备份
     _purc_bak="${_purc_file}.bak.$(date +%Y%m%d%H%M%S)"
@@ -5519,7 +5751,8 @@ _proxy_unset_shell_rc() {
             ;;
     esac
 
-    mv "$_purc_tmp" "$_purc_file" 2>/dev/null || return 1
+    # 用 cat 重定向而非 mv，保留原文件 inode/属主/权限（与 _proxy_set_shell_rc 一致）
+    cat "$_purc_tmp" > "$_purc_file" 2>/dev/null && rm -f "$_purc_tmp" || return 1
     return 0
 }
 
@@ -6141,12 +6374,8 @@ select_backup(){
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
             # 获取选择的备份名
-            _sb_idx=0
-            for _sb_item in "$@"; do
-                [ "$_sb_idx" = "$MENU_RESULT" ] && break
-                _sb_idx=$((_sb_idx + 1))
-            done
-            SELECTED_BACKUP="$_sb_item"
+            _get_nth_arg "$MENU_RESULT" "$@"
+            SELECTED_BACKUP="$SELECTED_ITEM"
             return 0
             ;;
     esac
@@ -6226,36 +6455,91 @@ _logs_find_file() {
 
 # logs_menu moved to TUI section below
 
+# 健康检查统计打印辅助函数（供 health_check 在"已运行"与"自动恢复成功"两分支复用）
+_health_check_print_stats(){
+    local mem cpu _hc_ports _hc_mixed _hc_socks _hc_http connections
+    mem=$(ps -o rss= -p "$clash_pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}')
+    cpu=$(ps -p "$clash_pid" -o %cpu= 2>/dev/null)
+    printf "%b\n" "${COLOR_GREEN}$health_check_ok_msg${COLOR_RESET}"
+    echo "$health_clash_uptime_msg $(ps -p "$clash_pid" -o etime= 2>/dev/null)"
+    echo "$health_clash_memory_msg $mem"
+    echo "$health_clash_cpu_msg ${cpu}%"
+    # 统计活动连接数：读取配置端口（mixed-port / socks-port / port）
+    _hc_ports=""
+    _hc_mixed=$(find_user_config "mixed-port" 2>/dev/null)
+    _hc_socks=$(find_user_config "socks-port" 2>/dev/null)
+    _hc_http=$(find_user_config "port" 2>/dev/null)
+    [ -n "$_hc_mixed" ] && _hc_ports="$_hc_ports:$_hc_mixed"
+    [ -n "$_hc_socks" ] && _hc_ports="$_hc_ports:$_hc_socks"
+    [ -n "$_hc_http" ] && _hc_ports="$_hc_ports:$_hc_http"
+    connections=0
+    if [ -n "$_hc_ports" ]; then
+        connections=$(ss -tn 2>/dev/null | grep -cE "$(echo "$_hc_ports" | sed 's/^://; s/:/|/g')" 2>/dev/null) || connections=0
+    fi
+    echo "$health_clash_connections_msg $connections"
+}
+
+# flow_26 健康检查流程
 health_check(){
     refresh_status
     # 显示自动恢复状态
-    local auto_recovery=$(find_clashtool_config "auto_recovery" 2>/dev/null)
+    local auto_recovery
+    auto_recovery=$(find_clashtool_config "auto_recovery" 2>/dev/null)
     echo "$health_check_auto_recovery_status_msg ${auto_recovery:-disabled}"
-    # 显示运行状态
+
+    # flow_26 节点：决策"进程存活?"
     if $clash_is_running; then
-        local mem=$(ps -o rss= -p "$clash_pid" 2>/dev/null | awk '{printf "%.1f MB", $1/1024}')
-        local cpu=$(ps -p "$clash_pid" -o %cpu= 2>/dev/null)
-        printf "%b\n" "${COLOR_GREEN}$health_check_ok_msg${COLOR_RESET}"
-        echo "$health_clash_uptime_msg $(ps -p "$clash_pid" -o etime= 2>/dev/null)"
-        echo "$health_clash_memory_msg $mem"
-        echo "$health_clash_cpu_msg ${cpu}%"
-        # 统计活动连接数：读取配置端口（mixed-port / socks-port / port）
-        local _hc_ports=""
-        local _hc_mixed=$(find_user_config "mixed-port" 2>/dev/null)
-        local _hc_socks=$(find_user_config "socks-port" 2>/dev/null)
-        local _hc_http=$(find_user_config "port" 2>/dev/null)
-        [ -n "$_hc_mixed" ] && _hc_ports="$_hc_ports:$_hc_mixed"
-        [ -n "$_hc_socks" ] && _hc_ports="$_hc_ports:$_hc_socks"
-        [ -n "$_hc_http" ] && _hc_ports="$_hc_ports:$_hc_http"
-        local connections=0
-        if [ -n "$_hc_ports" ]; then
-            connections=$(ss -tn 2>/dev/null | grep -cE "$(echo "$_hc_ports" | sed 's/^://; s/:/|/g')" 2>/dev/null) || connections=0
-        fi
-        echo "$health_clash_connections_msg $connections"
-    else
-        failed "$clash_not_running_warn_msg"
+        # 采集运行指标 + 正常报告 → 检查完成（成功结束）
+        _health_check_print_stats
+        return 0
+    fi
+
+    # flow_26 节点：决策"auto_recovery enabled?"
+    if [ "$auto_recovery" != "enabled" ]; then
+        # 否 → 提示"已停止请手动重启" → 检查异常（失败结束）
+        warn "$health_check_manual_restart_hint_msg" false
+        failed "$health_check_failed_msg" false
         return 1
     fi
+
+    # 是 → 重启 Clash
+    normal "$health_check_auto_recovery_start_msg"
+    # 子 shell 隔离 start 内部 failed 在 cron 下的 exit 1；nohup 保证 clash 进程存活
+    ( start ) || true
+    refresh_status
+
+    # flow_26 节点：决策"重启成功?"
+    if $clash_is_running; then
+        # 是 → OK → 重置失败计数 → 检查完成（成功结束）
+        update_clashtool_config "auto_recovery_fail_count" "0"
+        printf "%b\n" "${COLOR_GREEN}$health_check_auto_recovery_success_msg${COLOR_RESET}"
+        _health_check_print_stats
+        return 0
+    fi
+
+    # 否 → 失败次数 +1
+    local _hc_fail_count
+    _hc_fail_count=$(find_clashtool_config "auto_recovery_fail_count" 2>/dev/null)
+    # 数值兜底：空或非数字归 0
+    case "$_hc_fail_count" in
+        ''|*[!0-9]*) _hc_fail_count=0 ;;
+    esac
+    _hc_fail_count=$((_hc_fail_count + 1))
+    update_clashtool_config "auto_recovery_fail_count" "$_hc_fail_count"
+    warn "$(printf "$health_check_auto_recovery_fail_count_msg" "$_hc_fail_count")" false
+
+    # flow_26 节点：决策"≥3 次?"
+    if [ "$_hc_fail_count" -ge 3 ]; then
+        # 停止自动恢复（同时清零计数，避免重新启用后立即触发）→ 检查异常（失败结束）
+        update_clashtool_config "auto_recovery" "disabled"
+        update_clashtool_config "auto_recovery_fail_count" "0"
+        failed "$health_check_auto_recovery_disabled_after_failures_msg" false
+        return 1
+    fi
+
+    # 检查异常（失败结束，保留自动恢复以重试）
+    failed "$health_check_failed_msg" false
+    return 1
 }
 
 get_health_status(){
@@ -6309,12 +6593,8 @@ select_profile(){
         BACK|QUIT|''|*[!0-9]*) return 1 ;;
         *)
             # 获取选择的配置文件名
-            _sp_idx=0
-            for _sp_item in "$@"; do
-                [ "$_sp_idx" = "$MENU_RESULT" ] && break
-                _sp_idx=$((_sp_idx + 1))
-            done
-            SELECTED_PROFILE="$_sp_item"
+            _get_nth_arg "$MENU_RESULT" "$@"
+            SELECTED_PROFILE="$SELECTED_ITEM"
             return 0
             ;;
     esac
@@ -6424,6 +6704,12 @@ rules_add(){
 
 is_root() {
     [ "$(id -u)" -eq 0 ]
+}
+
+# 判断是否为系统级安装（install_dir 指向 /opt/clash）
+# 用于业务函数按安装级别选择行为分支（桌面自启 vs systemd 等），不受当前用户身份影响
+is_system_install() {
+    [ "${install_dir}" = "/opt/${service_name}" ]
 }
 
 is_docker() {
@@ -6601,7 +6887,7 @@ check_cmd_available() {
 # - root 安装：/usr/local/bin 通常已在 PATH 中，bash/zsh 需要 hash -r
 # - 用户级安装：~/.local/bin 可能不在 PATH 中，需要 export PATH
 post_install_hint() {
-    if is_root; then
+    if is_system_install; then
         remind "$post_install_hint_hash_msg" false
     else
         remind "$(printf "$post_install_hint_export_msg" "$symlink_dir")" false
@@ -6709,51 +6995,94 @@ check_and_elevate() {
         failed "$cannot_elevate_no_way_msg"
     fi
 }
+
+# 权限足则直接执行命令，否则提权重跑脚本（提权后本进程不返回）
+# 用于消除 _dispatch_group 中 "if is_root || ! requires_root; then CMD; else check_and_elevate; fi" 重复
+# 参数: $1=requires_root 的操作名, $2..=要执行的命令及参数
+# 依赖全局: _dg_group, _dg_sub, _dg_arg（提权分支透传给 check_and_elevate）
+_run_priv() {
+    _rp_op="$1"; shift
+    if is_root || ! requires_root "$_rp_op"; then
+        "$@"
+    else
+        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
+    fi
+}
+
+# 打印"未知子命令"错误并返回 1
+# 参数: $1=分组名, $2=子命令名
+_unknown_sub() {
+    printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "$1" "$2")${COLOR_RESET}"
+    return 1
+}
+
+# 打印"未知分组"错误并返回 1
+# 参数: $1=分组名
+_unknown_group() {
+    printf "%b\n" "${COLOR_RED}$(printf "$unknown_group_msg" "$1")${COLOR_RESET}"
+    return 1
+}
+
+# 三态布尔参数分派：on/true→func true，off/false→func false，其他→func "$arg"
+# 用于 auto_start/gateway/auto_update_sub 等 on/off 命令
+# 参数: $1=函数名, $2=参数值
+_apply_tri_state() {
+    case "$2" in
+        on|true) "$1" true ;;
+        off|false) "$1" false ;;
+        *) "$1" "$2" ;;
+    esac
+}
+
 # 参数：
 #   $1: input - 输入字符串，格式 "key::value"
 #   $2: get_func - 获取配置的函数名
 #   $3: set_func - 设置配置的函数名
 #   $4: error_msg - 错误消息
+#   $5: allow_new - 是否允许新建/空值键（true 时跳过键存在验证，用于 clashtool.ini 动态配置项）
 config_operation() {
     local input="$1"
     local get_func="$2"
     local set_func="$3"
     local error_msg="$4"
-    
+    local allow_new="${5:-false}"
+
     local key=$(echo "${input}" | awk -F '::' '{print $1}')
     local val=$(echo "${input}" | awk -F '::' '{print $2}')
-    
+
     if [ -z "$val" ]; then
         # 获取配置值
         local current_val=$($get_func "$key")
         echo "$current_val"
         return 0
     fi
-    
-    # 验证键是否存在
-    local temp_val=$($get_func "$key")
-    if [ -z "$temp_val" ]; then
-        failed "$error_msg"
-        return 1
+
+    # 验证键是否存在（allow_new=true 时跳过，允许新建 clashtool.ini 配置项）
+    if [ "$allow_new" != "true" ]; then
+        local temp_val=$($get_func "$key")
+        if [ -z "$temp_val" ]; then
+            failed "$error_msg"
+            return 1
+        fi
     fi
-    
+
     # 验证输入值
     if ! validate_config_value "$key" "$val"; then
         return 1
     fi
-    
+
     # 更新配置
     $set_func "$key" "$val"
 }
 
 # 函数:修改用户配置
 userconfig(){
-    config_operation "$1" "find_user_config" "update_user_config" "$config_key_error_msg"
+    config_operation "$1" "find_user_config" "update_user_config" "$config_key_error_msg" "false"
 }
 
-# 函数:获取或修改clashtool配置
+# 函数:获取或修改clashtool配置（允许新建配置项，如 subscription_convert_api）
 clashtool() {
-    config_operation "$1" "find_clashtool_config" "update_clashtool_config" "$config_key_error_msg"
+    config_operation "$1" "find_clashtool_config" "update_clashtool_config" "$config_key_error_msg" "true"
 }
 
 # ==================== Clash 用户配置编辑功能 ====================
@@ -7122,18 +7451,21 @@ _dispatch_group() {
     case "$_dg_group" in
     subscribe)
         case "$_dg_sub" in
-            add) add "$_dg_arg" ;;
-            del) del "$_dg_arg" ;;
-            list) list ;;
-            update) update_sub "$_dg_arg" ;;
-            auto-update)
-                case "$_dg_arg" in
-                    on|true) auto_update_sub true ;;
-                    off|false) auto_update_sub false ;;
-                    *) auto_update_sub "$_dg_arg" ;;
-                esac
+            add) _run_priv "add" add "$_dg_arg" ;;
+            # modify 接受 name::url::interval 格式（与 add 一致），解析后调用 modify 函数
+            modify)
+                _sm_name=$(printf '%s' "$_dg_arg" | awk -F '::' '{print $1}')
+                _sm_url=$(printf '%s' "$_dg_arg" | awk -F '::' '{print $2}')
+                _sm_interval=$(printf '%s' "$_dg_arg" | awk -F '::' '{print $3}')
+                _run_priv "modify" modify "$_sm_name" "$_sm_url" "$_sm_interval"
                 ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "subscribe" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            del) _run_priv "del" del "$_dg_arg" ;;
+            list) list ;;
+            update) _run_priv "update_sub" update_sub "$_dg_arg" ;;
+            auto-update)
+                _run_priv "auto_update_sub" _apply_tri_state auto_update_sub "$_dg_arg"
+                ;;
+            *) _unknown_sub "subscribe" "$_dg_sub" ;;
         esac
         ;;
     nodes)
@@ -7152,7 +7484,7 @@ _dispatch_group() {
             select) proxy_select_server ;;
             test) proxy_test_delay ;;
             urltest) proxy_url_test ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "nodes" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "nodes" "$_dg_sub" ;;
         esac
         ;;
     proxy)
@@ -7169,72 +7501,29 @@ _dispatch_group() {
             on) proxy true ;;
             off) proxy false ;;
             status|"") proxy_show_status ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "proxy" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "proxy" "$_dg_sub" ;;
         esac
         ;;
     config)
         case "$_dg_sub" in
             view|"") config_view ;;
             get) config "$_dg_arg" ;;
-            set) config_set "$_dg_arg" ;;
-            del) config_del "$_dg_arg" ;;
-            edit) config_edit_raw ;;
+            set) _run_priv "config_set" config_set "$_dg_arg" ;;
+            del) _run_priv "config_del" config_del "$_dg_arg" ;;
+            edit) _run_priv "config_edit_raw" config_edit_raw ;;
             tool) clashtool "$_dg_arg" ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "config" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "config" "$_dg_sub" ;;
         esac
         ;;
     install)
         # install 无子命令时默认安装核心+UI
         if [ -z "$_dg_sub" ]; then
-            prompt_install_mode
-            _pim_ret=$?
-            if [ "$_pim_ret" = "2" ]; then return 1; fi
-            if [ "$_pim_ret" = "0" ]; then
-                # 用户级安装
-                set_install_paths "user"
-                install "$_dg_arg" || return 1
-                if ! is_ui_installed; then
-                    install_ui "$_dg_arg" || return 1
-                else
-                    normal "$ui_already_installed_skip_msg"
-                fi
-            else
-                # 系统级安装
-                [ -z "$_cli_mode_flag" ] && _cli_mode_flag="--root"
-                if is_root; then
-                    set_install_paths "root"
-                    install "$_dg_arg" || return 1
-                    if ! is_ui_installed; then
-                        install_ui "$_dg_arg" || return 1
-                    else
-                        normal "$ui_already_installed_skip_msg"
-                    fi
-                else
-                    # 非 root 用户需要提权
-                    normal "$install_mode_root_selected_msg"
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg" $_cli_mode_flag
-                fi
-            fi
+            _install_with_mode true || return 1
             return 0
         fi
         case "$_dg_sub" in
             core)
-                prompt_install_mode
-                _pim_ret=$?
-                if [ "$_pim_ret" = "2" ]; then return 1; fi
-                if [ "$_pim_ret" = "0" ]; then
-                    set_install_paths "user"
-                    install "$_dg_arg"
-                else
-                    [ -z "$_cli_mode_flag" ] && _cli_mode_flag="--root"
-                    if is_root; then
-                        set_install_paths "root"
-                        install "$_dg_arg"
-                    else
-                        normal "$install_mode_root_selected_msg"
-                        check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg" $_cli_mode_flag
-                    fi
-                fi
+                _install_with_mode false
                 ;;
             ui)
                 # UI 安装位置跟随核心：核心必须已安装，install_dir 已是核心所在目录
@@ -7244,13 +7533,9 @@ _dispatch_group() {
                 fi
                 # 基于核心所在目录的可写性判断是否提权
                 # （用户级核心→用户级UI，系统级核心→系统级UI，无需用户指定级别）
-                if is_root || ! requires_root "install"; then
-                    install_ui "$_dg_arg"
-                else
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                fi
+                _run_priv "install" install_ui "$_dg_arg"
                 ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "install" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "install" "$_dg_sub" ;;
         esac
         ;;
     uninstall)
@@ -7276,38 +7561,23 @@ _dispatch_group() {
                 # 完全卸载：核心 + UI + 所有配置
                 # uninstall "all" 会通过 clear "all" 删除整个 install_dir（含 UI 和配置）
                 # uninstall() 内部已打印成功消息，此处无需重复
-                if is_root || ! requires_root "uninstall"; then
-                    uninstall "all"
-                else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                fi
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                _run_priv "uninstall" uninstall "all"
                 ;;
             core)
                 # uninstall core 仅接受 purge 参数（删除配置），拒绝 all（避免误删 UI）
                 case "$_dg_arg" in
-                    purge|"") _un_core_arg="$_dg_arg" ;;
-                    *)
-                        printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "uninstall core" "$_dg_arg")${COLOR_RESET}"
-                        return 1
-                        ;;
+                    purge|"") ;;
+                    *) _unknown_sub "uninstall core" "$_dg_arg"; return 1 ;;
                 esac
-                if is_root || ! requires_root "uninstall"; then
-                    uninstall "$_un_core_arg"
-                else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_un_core_arg"
-                fi
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                _run_priv "uninstall" uninstall "$_dg_arg"
                 ;;
             ui)
-                if is_root || ! requires_root "uninstall"; then
-                    uninstall_ui "$_dg_arg"
-                else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                fi
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                _run_priv "uninstall" uninstall_ui "$_dg_arg"
                 ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "uninstall" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "uninstall" "$_dg_sub" ;;
         esac
         ;;
     update)
@@ -7329,81 +7599,56 @@ _dispatch_group() {
         fi
         case "$_dg_sub" in
             core)
-                if is_root || ! requires_root "update"; then
-                    update "$_dg_arg"
-                else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                fi
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                _run_priv "update" update "$_dg_arg"
                 ;;
             ui)
-                if is_root || ! requires_root "update_ui"; then
-                    update_ui "$_dg_arg"
-                else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                fi
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                _run_priv "update_ui" update_ui "$_dg_arg"
                 ;;
             script) update_script ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "update" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "update" "$_dg_sub" ;;
         esac
         ;;
     system)
         case "$_dg_sub" in
             autostart)
-                case "$_dg_arg" in
-                    on|true) auto_start true ;;
-                    off|false) auto_start false ;;
-                    *) auto_start "$_dg_arg" ;;
-                esac
+                # 系统级安装需 root（systemd），用户级不需（桌面自启）；由 requires_root 按目录可写性判断
+                _run_priv "auto_start" _apply_tri_state auto_start "$_dg_arg"
                 ;;
             gateway)
-                if ! is_root; then
-                    permission_denied_msg "gateway"
-                    printf "\n"
-                    failed "$gateway_root_needed_msg"
-                    return 1
-                fi
-                case "$_dg_arg" in
-                    on|true) gateway true ;;
-                    off|false) gateway false ;;
-                    *) gateway "$_dg_arg" ;;
-                esac
+                # 网关模式需要 root（设置 IP 转发），非 root 自动提权重跑脚本
+                _run_priv "gateway" _apply_tri_state gateway "$_dg_arg"
                 ;;
             check)
-                if is_root || ! requires_root "update_check"; then
-                    update_check
-                else
-                    # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
-                    check_and_elevate "$_dg_group" "$_dg_sub" "$_dg_arg"
-                fi
+                # check_and_elevate 会通过 sudo 重新执行整个脚本，成功后直接退出
+                _run_priv "update_check" update_check
                 ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "system" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            *) _unknown_sub "system" "$_dg_sub" ;;
         esac
         ;;
     tools)
         case "$_dg_sub" in
             logs) view_logs ;;
-            backup) backup_config ;;
+            backup) _run_priv "backup_config" backup_config ;;
             list-backups) list_backups ;;
-            restore) restore_backup ;;
-            delete-backup) delete_backup ;;
+            restore) _run_priv "restore_backup" restore_backup ;;
+            delete-backup) _run_priv "delete_backup" delete_backup ;;
             profiles) list_profiles ;;
-            create-profile) create_profile ;;
-            switch-profile) switch_profile ;;
-            delete-profile) delete_profile ;;
+            create-profile) _run_priv "create_profile" create_profile ;;
+            switch-profile) _run_priv "switch_profile" switch_profile ;;
+            delete-profile) _run_priv "delete_profile" delete_profile ;;
             rules) list_rules ;;
-            add-rule) rules_add ;;
-            edit-rules) rules_edit ;;
-            health) health_check ;;
-            toggle-recovery) toggle_auto_recovery ;;
-            symlink) repair_symlink && post_install_hint ;;
-            *) printf "%b\n" "${COLOR_RED}$(printf "$unknown_subcommand_msg" "tools" "$_dg_sub")${COLOR_RESET}"; return 1 ;;
+            add-rule) _run_priv "rules_add" rules_add ;;
+            edit-rules) _run_priv "rules_edit" rules_edit ;;
+            health) _run_priv "health_check" health_check ;;
+            toggle-recovery) _run_priv "toggle_auto_recovery" toggle_auto_recovery ;;
+            symlink) _run_priv "repair_symlink" repair_symlink && post_install_hint ;;
+            *) _unknown_sub "tools" "$_dg_sub" ;;
         esac
         ;;
     *)
-        printf "%b\n" "${COLOR_RED}$(printf "$unknown_group_msg" "$_dg_group")${COLOR_RESET}"
-        return 1
+        _unknown_group "$_dg_group"
         ;;
     esac
 }

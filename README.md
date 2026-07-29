@@ -169,11 +169,16 @@ clashtool                         # 无参数进入 TUI 交互菜单
 
 | 命令 | 参数 | 说明 |
 |------|------|------|
-| `subscribe add` | 名称::地址::间隔(小时) | 添加/修改订阅 |
+| `subscribe add` | 名称::地址::间隔(小时) | 添加订阅 |
+| `subscribe modify` | 名称::地址::间隔(小时) | 修改现有订阅 |
 | `subscribe del` | 订阅名称 | 删除订阅 |
 | `subscribe list` | — | 列出所有订阅 |
 | `subscribe update` | [名称\|all] | 更新订阅文件 |
 | `subscribe auto-update` | on\|off | 开启/关闭自动更新 |
+
+> **订阅地址格式**：`名称::URL::间隔(小时)`，间隔可选（留空则不自动更新）。URL 可以是远程订阅链接，也可以是本地文件路径。
+>
+> **自动解码与转换**：下载订阅时会自动检测内容格式——Base64 编码会自动解码为 YAML；若解码后或原始内容为节点链接格式（`ss://`、`vmess://` 等），将自动调用订阅转换服务转为 Clash YAML（需配置 `subscription_convert_api`，详见 [配置管理](#config--配置管理)）。
 
 #### nodes — 节点选择与测试
 
@@ -203,7 +208,34 @@ clashtool                         # 无参数进入 TUI 交互菜单
 | `config edit` | — | 编辑器修改 user.yaml |
 | `config tool` | 键::值 \| 键 | 编辑 clashtool 工具配置 |
 
-**可编辑配置键**：`port` `socks-port` `redir-port` `tproxy-port` `mixed-port` `allow-lan` `bind-address` `mode` `log-level` `ipv6` `unified-delay` `external-controller` `global-client-fingerprint` `external-ui` `secret` `interface-name` `routing-mark`
+**可编辑配置键（user.yaml，通过 `config set`）**：`port` `socks-port` `redir-port` `tproxy-port` `mixed-port` `allow-lan` `bind-address` `mode` `log-level` `ipv6` `unified-delay` `external-controller` `global-client-fingerprint` `external-ui` `secret` `interface-name` `routing-mark`
+
+**工具配置项（clashtool.ini，通过 `config tool`）**：
+
+| 配置项 | 说明 | 示例 |
+|--------|------|------|
+| `subscription_convert_api` | 订阅转换服务 API 地址（用于节点链接自动转 Clash YAML） | `http://127.0.0.1:25500/sub` |
+| `auto_recovery` | Clash 健康检查自动恢复开关（`enabled` / `disabled`） | `enabled` |
+| `auto_update_sub` | 订阅自动更新开关（`true` / `false`） | `true` |
+| `use` | 当前启用的订阅名称 | `mysub` |
+
+配置订阅转换服务示例：
+
+```bash
+# 配置本地 subconverter（需自行部署 subconverter 服务）
+clashtool config tool subscription_convert_api::http://127.0.0.1:25500/sub
+
+# 使用公共转换服务（不推荐用于生产，存在隐私泄露风险）
+clashtool config tool subscription_convert_api::https://sub.example.com/sub
+
+# 查看当前配置（不带 ::值 时为读取）
+clashtool config tool subscription_convert_api
+
+# 禁用自动转换：编辑 clashtool.ini 移除 subscription_convert_api 行
+# （config tool 无法删除配置项，仅支持读取/设置）
+```
+
+> **说明**：`config set` 编辑的是 Clash 用户配置（`user.yaml`，影响代理行为，仅允许修改已存在的键）；`config tool` 编辑的是工具自身配置（`clashtool.ini`，影响 clashtool 行为，允许新建配置项如 `subscription_convert_api`）。两者存储位置不同，不可混用。
 
 #### install — 安装管理
 
@@ -317,6 +349,20 @@ clashtool                         # 无参数进入 TUI 交互菜单
 ### 8. 订阅管理
 
 订阅配置通过 INI 持久化存储，支持自动定时更新。订阅地址格式为 `名称::URL::间隔(小时)`，间隔可选。
+
+**下载流程的自动解码与转换**（`download_sub` → `_try_base64_decode`）：
+
+| 内容格式 | 检测方式 | 处理行为 |
+|----------|---------|---------|
+| 明文 Clash YAML | 匹配 `proxies:` / `mixed-port:` 等特征键 | 直接通过，无需处理 |
+| Base64 编码的 YAML | 字符集 + 长度（4 倍数）校验 | `base64 -d` 解码（失败回退 `openssl base64`），解码后校验 YAML 特征并覆盖原文件 |
+| 明文节点链接 | 匹配 `ss://` `vmess://` `trojan://` 等前缀 | 调用订阅转换服务（需配置 `subscription_convert_api`） |
+| Base64 编码的节点链接 | 先解码，再走节点链接分支 | 同上，调用订阅转换服务 |
+
+**订阅转换服务**：
+- 配置 `subscription_convert_api` 后，检测到节点链接会自动调用 `{api}?target=clash&url={encoded_sub_url}` 拉取转换后的 Clash YAML
+- 未配置时给出清晰提醒（3 个选项：配置 API / 手动转换 / 使用自带转换的订阅链接），不静默失败
+- 转换服务需自行部署（如 [subconverter](https://github.com/tindy2013/subconverter)），公共服务存在隐私风险不推荐用于生产
 
 ### 9. 安装管理
 
